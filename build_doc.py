@@ -33,13 +33,15 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 from docx.shared import Cm, Pt, RGBColor
 
+from themes import DEFAULT_THEME, Theme, load_theme
+
+# Module-level theme — set by generate() before building.  All helpers read
+# from this variable so we don't have to change every function signature.
+_theme: Theme = DEFAULT_THEME
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-BLUE       = "1F4E79"
-BLUE_RGB   = RGBColor(0x1F, 0x4E, 0x79)
-GREY       = "F2F2F2"
-WHITE      = "FFFFFF"
 
 # Correct TypeNo mapping sourced from Therefore DB Codes reference.
 # TypeNo 1-13 are fixed control types; negative values reference keyword
@@ -615,10 +617,10 @@ def _set_borders(cell):
         tcPr.remove(old)
     tcPr.append(parse_xml(
         f'<w:tcBorders {nsdecls("w")}>'
-        '<w:top    w:val="single" w:sz="4" w:space="0" w:color="888888"/>'
-        '<w:left   w:val="single" w:sz="4" w:space="0" w:color="888888"/>'
-        '<w:bottom w:val="single" w:sz="4" w:space="0" w:color="888888"/>'
-        '<w:right  w:val="single" w:sz="4" w:space="0" w:color="888888"/>'
+        f'<w:top    w:val="single" w:sz="4" w:space="0" w:color="{_theme.hex("table_border")}"/>'
+        f'<w:left   w:val="single" w:sz="4" w:space="0" w:color="{_theme.hex("table_border")}"/>'
+        f'<w:bottom w:val="single" w:sz="4" w:space="0" w:color="{_theme.hex("table_border")}"/>'
+        f'<w:right  w:val="single" w:sz="4" w:space="0" w:color="{_theme.hex("table_border")}"/>'
         '</w:tcBorders>'
     ))
 
@@ -626,11 +628,11 @@ def _set_borders(cell):
 def hdr_cell(cells, idx, text):
     c = cells[idx]
     c.text = ""
-    _set_bg(c, BLUE)
+    _set_bg(c, _theme.hex("primary"))
     _set_borders(c)
     run = c.paragraphs[0].add_run(text)
     run.bold = True
-    run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    run.font.color.rgb = _theme.docx_rgb("white")
     run.font.size = Pt(9)
 
 
@@ -656,7 +658,9 @@ def _set_para_shading(para, hex_fill):
     pPr.append(shd)
 
 
-def _set_para_border(para, hex_color="AAAAAA", side="left", sz="12", space="72"):
+def _set_para_border(para, hex_color=None, side="left", sz="12", space="72"):
+    if hex_color is None:
+        hex_color = _theme.hex("code_border")
     from docx.oxml import OxmlElement
     pPr = para._p.get_or_add_pPr()
     pBdr = OxmlElement("w:pBdr")
@@ -676,7 +680,7 @@ def add_code_block(doc, text, lang_label=None):
         lr = lp.add_run(lang_label)
         lr.bold = True
         lr.font.size = Pt(8)
-        lr.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+        lr.font.color.rgb = _theme.docx_rgb("muted")
         lp.paragraph_format.space_after = Pt(0)
 
     lines = text.split("\n")
@@ -685,8 +689,8 @@ def add_code_block(doc, text, lang_label=None):
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after  = Pt(0)
         p.paragraph_format.left_indent  = Cm(0.4)
-        _set_para_shading(p, "F4F4F4")
-        _set_para_border(p, hex_color="AAAAAA", side="left", sz="16", space="72")
+        _set_para_shading(p, _theme.hex("code_bg"))
+        _set_para_border(p, side="left", sz="16", space="72")
         run = p.add_run(line if line else " ")
         run.font.name = "Consolas"
         run.font.size = Pt(8)
@@ -701,7 +705,7 @@ def add_render_note(doc):
     r = p.runs[0]
     r.font.size = Pt(8)
     r.font.italic = True
-    r.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+    r.font.color.rgb = _theme.docx_rgb("light_muted")
     p.paragraph_format.space_before = Pt(2)
     p.paragraph_format.space_after  = Pt(6)
 
@@ -756,17 +760,17 @@ def _manual_heading(doc, text, size_pt, space_before, space_after,
     p.paragraph_format.keep_with_next = True
     r = p.add_run(text)
     r.bold           = True
-    r.font.name      = BODY_FONT
+    r.font.name      = _theme.font("body")
     r.font.size      = Pt(size_pt)
-    r.font.color.rgb = BLUE_RGB
+    r.font.color.rgb = _theme.docx_rgb("primary")
     if meta:
         m = p.add_run(f"   {meta}")
-        m.font.name      = BODY_FONT
+        m.font.name      = _theme.font("body")
         m.font.size      = Pt(size_pt - 2)
-        m.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+        m.font.color.rgb = _theme.docx_rgb("muted")
         m.font.bold      = False
     if bottom_border:
-        _set_para_border(p, hex_color="1F4E79", side="bottom", sz="6", space="1")
+        _set_para_border(p, hex_color=_theme.hex("h1_border"), side="bottom", sz="6", space="1")
     return p
 
 
@@ -788,8 +792,8 @@ def kv_table(doc, rows, lw=5.0, vw=11.5):
         if not value:
             continue
         row = t.add_row()
-        body_cell(row.cells, 0, label, GREY, bold=True)
-        body_cell(row.cells, 1, value, WHITE)
+        body_cell(row.cells, 0, label, _theme.hex("grey"), bold=True)
+        body_cell(row.cells, 1, value, _theme.hex("white"))
     set_col_widths(t, [lw, vw])
     return t
 
@@ -846,7 +850,7 @@ def build_fields_table(doc, rows):
     for i, h in enumerate(["No", "Field Name", "Type", "Size", "Details"]):
         hdr_cell(hdr, i, h)
     for idx, fr in enumerate(rows):
-        fill = GREY if idx % 2 == 1 else WHITE
+        fill = _theme.hex("grey") if idx % 2 == 1 else _theme.hex("white")
         rc = t.add_row().cells
         body_cell(rc, 0, fr["field_no"], fill)
         body_cell(rc, 1, fr["name"],     fill, bold=True)
@@ -872,12 +876,12 @@ def build_categories(doc, categories, render_dir, include_images, maps, section_
             p.add_run("Folder: ").italic = True
             run = p.add_run(fp_map[folder_no])
             run.bold = True
-            run.font.color.rgb = BLUE_RGB
+            run.font.color.rgb = _theme.docx_rgb("primary")
 
         desc = (cat_elem.findtext("Description") or "").strip()
         if desc:
             dp = doc.add_paragraph(desc)
-            dp.runs[0].font.color.rgb = RGBColor(0x44, 0x44, 0x44)
+            dp.runs[0].font.color.rgb = _theme.docx_rgb("description")
             dp.runs[0].italic = True
 
         if include_images and render_dir:
@@ -931,7 +935,7 @@ def build_ix_profiles(doc, profiles, section_no, maps=None):
                 hp = doc.add_paragraph()
                 r = hp.add_run("Init Script:")
                 r.bold = True
-                r.font.color.rgb = BLUE_RGB
+                r.font.color.rgb = _theme.docx_rgb("primary")
                 hp.paragraph_format.space_after = Pt(2)
                 add_code_block(doc, p["init_script"])
 
@@ -939,7 +943,7 @@ def build_ix_profiles(doc, profiles, section_no, maps=None):
                 ap = doc.add_paragraph()
                 r = ap.add_run(f"Field assignments ({len(p['assignments'])}):")
                 r.bold = True
-                r.font.color.rgb = BLUE_RGB
+                r.font.color.rgb = _theme.docx_rgb("primary")
 
                 any_check    = any(a["check"]    for a in p["assignments"])
                 any_fallback = any(a["fallback"] for a in p["assignments"])
@@ -956,7 +960,7 @@ def build_ix_profiles(doc, profiles, section_no, maps=None):
                 for i, h in enumerate(cols):
                     hdr_cell(t.rows[0].cells, i, h)
                 for idx, a in enumerate(p["assignments"]):
-                    fill = GREY if idx % 2 == 1 else WHITE
+                    fill = _theme.hex("grey") if idx % 2 == 1 else _theme.hex("white")
                     rc = t.add_row().cells
                     body_cell(rc, 0, a["field"],  fill, bold=True)
                     body_cell(rc, 1, a["expr"],   fill, mono=True, pt=8)
@@ -1039,7 +1043,7 @@ def build_workflows(doc, root, section_no, maps, render_dir=None, font=None):
             hdr_cell(t.rows[0].cells, i, h)
 
         for idx, task in enumerate(task_list):
-            fill       = GREY if idx % 2 == 1 else WHITE
+            fill       = _theme.hex("grey") if idx % 2 == 1 else _theme.hex("white")
             task_no    = get_text(task, "TaskNo") or ""
             task_name  = get_name(task) or f"Task_{task_no}"
             task_type  = get_text(task, "Type") or ""
@@ -1099,7 +1103,7 @@ def build_workflows(doc, root, section_no, maps, render_dir=None, font=None):
                     if action:
                         act_r = p.add_run(f"  ({action})")
                         act_r.font.size = Pt(7)
-                        act_r.font.color.rgb = RGBColor(0x55, 0x55, 0x55)
+                        act_r.font.color.rgb = _theme.docx_rgb("muted")
                     if condition:
                         cp = tc.add_paragraph()
                         cp.paragraph_format.space_before = Pt(0)
@@ -1108,7 +1112,7 @@ def build_workflows(doc, root, section_no, maps, render_dir=None, font=None):
                         cr = cp.add_run(f"IF: {condition}")
                         cr.font.size     = Pt(7)
                         cr.font.name     = "Consolas"
-                        cr.font.color.rgb = RGBColor(0x77, 0x77, 0x77)
+                        cr.font.color.rgb = _theme.docx_rgb("light_muted")
                         cr.font.italic   = True
 
         set_col_widths(t, [1.0, 4.5, 2.3, 3.8, 1.8, 4.0])
@@ -1290,7 +1294,7 @@ def _add_eform_fields_table(doc, ef_elem, maps=None):
         hdr_cell(t.rows[0].cells, i, h)
 
     for idx, f in enumerate(fields):
-        fill = GREY if idx % 2 == 1 else WHITE
+        fill = _theme.hex("grey") if idx % 2 == 1 else _theme.hex("white")
         rc   = t.add_row().cells
 
         # Page / datagrid context
@@ -1308,10 +1312,10 @@ def _add_eform_fields_table(doc, ef_elem, maps=None):
         r.bold = True
         r.font.size = Pt(9)
         if f["hidden"]:
-            r.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+            r.font.color.rgb = _theme.docx_rgb("footer_text")
         kr = c0.paragraphs[0].add_run(f"\n{f['key']}")
         kr.font.size = Pt(7)
-        kr.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+        kr.font.color.rgb = _theme.docx_rgb("light_muted")
         kr.font.name = "Consolas"
 
         # Type + flags
@@ -1337,12 +1341,12 @@ def _add_eform_fields_table(doc, ef_elem, maps=None):
             lr = p.add_run(label_text + ": ")
             lr.bold = True
             lr.font.size = Pt(8)
-            lr.font.color.rgb = BLUE_RGB
+            lr.font.color.rgb = _theme.docx_rgb("primary")
             cr = p.add_run(code)
             cr.font.size = Pt(8)
             if mono:
                 cr.font.name = "Consolas"
-            cr.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+            cr.font.color.rgb = _theme.docx_rgb("text_dark")
 
         added = False
         if f["rules"]:
@@ -1491,7 +1495,7 @@ def build_folder_hierarchy(doc, root, maps, categories, section_no):
         fp.paragraph_format.left_indent = indent
         run = fp.add_run(fname)
         run.bold  = True
-        run.font.color.rgb = BLUE_RGB
+        run.font.color.rgb = _theme.docx_rgb("primary")
         fp.add_run(f"  (No: {show_id(fno)})")
 
         # Items inside this folder, sorted by type then name
@@ -1504,7 +1508,7 @@ def build_folder_hierarchy(doc, root, maps, categories, section_no):
             ip.paragraph_format.left_indent = Cm((depth + 1) * 0.75)
             ip.add_run(name).bold = True
             ip.add_run(f"  [{type_label}  No: {show_id(obj_no)}]"
-                       ).font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+                       ).font.color.rgb = _theme.docx_rgb("muted")
 
         # Recurse into child folders
         children = sorted(fn_childs.get(fno, []),
@@ -1528,7 +1532,7 @@ def build_folder_hierarchy(doc, root, maps, categories, section_no):
             ip.paragraph_format.left_indent = Cm(0.75)
             ip.add_run(name).bold = True
             ip.add_run(f"  [{type_label}  No: {show_id(obj_no)}]"
-                       ).font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+                       ).font.color.rgb = _theme.docx_rgb("muted")
 
 
 # ---------------------------------------------------------------------------
@@ -1588,7 +1592,7 @@ def build_keyword_dicts(doc, maps, categories, section_no):
             for idx, (kw_no, kw_val) in enumerate(
                 sorted(d["keywords"], key=lambda x: x[0])
             ):
-                fill = GREY if idx % 2 == 1 else WHITE
+                fill = _theme.hex("grey") if idx % 2 == 1 else _theme.hex("white")
                 rc = t.add_row().cells
                 body_cell(rc, 0, str(kw_no), fill)
                 body_cell(rc, 1, kw_val,     fill)
@@ -1602,15 +1606,13 @@ def build_keyword_dicts(doc, maps, categories, section_no):
 # ---------------------------------------------------------------------------
 # Document style setup
 # ---------------------------------------------------------------------------
-BODY_FONT = "Calibri"
-
 def setup_document_styles(doc):
     """Apply consistent typography across Normal, headings, and list styles."""
     from docx.oxml import OxmlElement
 
     # Normal / body text
     normal = doc.styles["Normal"]
-    normal.font.name = BODY_FONT
+    normal.font.name = _theme.font("body")
     normal.font.size = Pt(10)
     normal.paragraph_format.space_before = Pt(0)
     normal.paragraph_format.space_after  = Pt(3)
@@ -1622,10 +1624,10 @@ def setup_document_styles(doc):
         (3, 10, 8,  2),
     ]:
         style = doc.styles[f"Heading {level}"]
-        style.font.name  = BODY_FONT
+        style.font.name  = _theme.font("body")
         style.font.size  = Pt(size)
         style.font.bold  = True
-        style.font.color.rgb = BLUE_RGB
+        style.font.color.rgb = _theme.docx_rgb("primary")
         style.paragraph_format.space_before  = Pt(space_before)
         style.paragraph_format.space_after   = Pt(space_after)
         style.paragraph_format.keep_with_next = True
@@ -1637,14 +1639,14 @@ def setup_document_styles(doc):
     bottom.set(qn("w:val"),   "single")
     bottom.set(qn("w:sz"),    "6")
     bottom.set(qn("w:space"), "1")
-    bottom.set(qn("w:color"), "1F4E79")
+    bottom.set(qn("w:color"), _theme.hex("h1_border"))
     pBdr.append(bottom)
     h1_pPr.append(pBdr)
 
     # List Bullet
     try:
         lb = doc.styles["List Bullet"]
-        lb.font.name = BODY_FONT
+        lb.font.name = _theme.font("body")
         lb.font.size = Pt(10)
     except KeyError:
         pass
@@ -1652,10 +1654,10 @@ def setup_document_styles(doc):
     # Title (level 0)
     try:
         title_s = doc.styles["Title"]
-        title_s.font.name  = BODY_FONT
+        title_s.font.name  = _theme.font("body")
         title_s.font.size  = Pt(24)
         title_s.font.bold  = True
-        title_s.font.color.rgb = BLUE_RGB
+        title_s.font.color.rgb = _theme.docx_rgb("primary")
     except KeyError:
         pass
 
@@ -1680,15 +1682,15 @@ def add_footer(doc, doc_title="Therefore Documentation"):
         top.set(qn("w:val"),   "single")
         top.set(qn("w:sz"),    "4")
         top.set(qn("w:space"), "1")
-        top.set(qn("w:color"), "CCCCCC")
+        top.set(qn("w:color"), _theme.hex("footer_border"))
         pBdr.append(top)
         pPr.append(pBdr)
 
         r = fp.add_run(f"Therefore Documentation  —  {doc_title}")
-        r.font.name      = BODY_FONT
+        r.font.name      = _theme.font("body")
         r.font.size      = Pt(8)
         r.font.italic    = True
-        r.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+        r.font.color.rgb = _theme.docx_rgb("footer_text")
 
 
 def add_toc(doc):
@@ -1718,7 +1720,7 @@ def add_toc(doc):
     run2 = para.add_run()
     run2._r.append(end)
 
-    run.font.name  = BODY_FONT
+    run.font.name  = _theme.font("body")
     run.font.size  = Pt(10)
     doc.add_page_break()
 
@@ -1924,7 +1926,7 @@ def build_relationship_diagram(doc, root, maps, categories, section_no,
         from itertools import groupby
         sorted_edges = sorted(cat_cat_edges, key=lambda e: cat_name(e[0]))
         for idx, (src, tgt, lbl) in enumerate(sorted_edges):
-            fill = GREY if idx % 2 else WHITE
+            fill = _theme.hex("grey") if idx % 2 else _theme.hex("white")
             rc = t.add_row().cells
             body_cell(rc, 0, cat_name(src), fill, bold=True)
             body_cell(rc, 1, lbl or "—", fill, mono=True, pt=8)
@@ -1951,7 +1953,7 @@ def build_relationship_diagram(doc, root, maps, categories, section_no,
             hdr_cell(t.rows[0].cells, i, h)
         for idx, (kw_no, cat_nos) in enumerate(
                 sorted(kw_to_cats.items(), key=lambda x: kw_dicts.get(x[0], ""))):
-            fill = GREY if idx % 2 else WHITE
+            fill = _theme.hex("grey") if idx % 2 else _theme.hex("white")
             rc = t.add_row().cells
             body_cell(rc, 0, kw_dicts.get(kw_no, f"Dict {kw_no}"), fill, bold=True)
             cat_list = ", ".join(sorted(
@@ -1972,7 +1974,7 @@ def build_relationship_diagram(doc, root, maps, categories, section_no,
         for i, h in enumerate(["eForm", "Submits to Category"]):
             hdr_cell(t.rows[0].cells, i, h)
         for idx, (src, tgt, _) in enumerate(eform_edges):
-            fill = GREY if idx % 2 else WHITE
+            fill = _theme.hex("grey") if idx % 2 else _theme.hex("white")
             rc   = t.add_row().cells
             ef_no   = src[3:]
             ef_name = next((ef.findtext("FName") for ef in (ef_el or [])
@@ -2009,7 +2011,7 @@ def build_reports_section(doc, items, section_no):
         hdr_cell(t.rows[0].cells, i, h)
 
     for idx, r in enumerate(sorted(items, key=lambda x: get_name(x) or "")):
-        fill    = GREY if idx % 2 else WHITE
+        fill    = _theme.hex("grey") if idx % 2 else _theme.hex("white")
         rno     = get_text(r, "RptDefNo") or get_text(r, "ReportNo") or ""
         name    = get_text(r, "RptName") or get_name(r) or ""
         rtype   = REPORT_TYPE_LABELS.get(get_text(r, "RptType") or "", "—")
@@ -2061,9 +2063,10 @@ def generate(
     body_only:   bool = False,
     render_dir:  str  = None,
     data_dir:    str  = None,
-    sections:      list = None,   # None = all; list of section keys from ALL_SECTIONS
-    start_section: int  = 1,      # first section number; 0 = no section numbers
+    sections:      list = None,
+    start_section: int  = 1,
     log_fn=None,
+    theme: Theme = None,
 ) -> list:
     """
     Generate a Therefore documentation Word document from an XML export.
@@ -2075,6 +2078,9 @@ def generate(
     """
     import sys as _sys
     import types
+
+    global _theme
+    _theme = theme if theme is not None else DEFAULT_THEME
 
     active_sections = set(sections) if sections is not None else set(ALL_SECTIONS)
     # Respect legacy skip_eforms flag
@@ -2219,10 +2225,10 @@ def _main_impl(args, warnings=None):
         sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
         sub.runs[0].bold = True
         sub.runs[0].font.size = Pt(14)
-        sub.runs[0].font.color.rgb = BLUE_RGB
+        sub.runs[0].font.color.rgb = _theme.docx_rgb("primary")
         dp = doc.add_paragraph(f"Generated: {date.today().isoformat()}")
         dp.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        dp.runs[0].font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+        dp.runs[0].font.color.rgb = _theme.docx_rgb("muted")
         doc.add_page_break()
 
         add_render_note(doc)
@@ -2334,7 +2340,10 @@ def main():
                     help="Skip title page — output is content only for merging into a wrapper doc")
     ap.add_argument("--start-section", type=int, default=1, metavar="N",
                     help="First section number to use (default: 1, use higher when merging after existing sections)")
+    ap.add_argument("--theme", help="Path to a YAML theme file")
     args = ap.parse_args()
+
+    theme = load_theme(args.theme) if args.theme else None
 
     warnings = generate(
         args.xml, args.output,
@@ -2344,6 +2353,7 @@ def main():
         render_dir    = getattr(args, "render_dir",    None),
         data_dir      = getattr(args, "data_dir",      None),
         start_section = getattr(args, "start_section", 1),
+        theme         = theme,
     )
     for w in warnings:
         print(f"⚠  {w}")

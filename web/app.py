@@ -76,14 +76,17 @@ async def index():
 async def start_generate(
     xml_file:      UploadFile = File(...),
     wrapper_file:  UploadFile = File(None),
+    theme_file:    UploadFile = File(None),
     sections:      str        = Form(""),
     start_section: int        = Form(0),   # 0 = no numbers; >= 1 = number from N
 ):
     xml_bytes     = await xml_file.read()
     wrapper_bytes = await wrapper_file.read() if wrapper_file and wrapper_file.filename else None
+    theme_bytes   = await theme_file.read() if theme_file and theme_file.filename else None
 
     xml_name     = xml_file.filename or "config.xml"
     wrapper_name = (wrapper_file.filename or "wrapper.docx") if wrapper_bytes else None
+    theme_name   = theme_file.filename or "theme.yaml" if theme_bytes else None
 
     sections_list = [s.strip() for s in sections.split(",") if s.strip()] or None
 
@@ -96,7 +99,7 @@ async def start_generate(
     thread = threading.Thread(
         target=_run_job,
         args=(job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
-              sections_list, start_section),
+              sections_list, start_section, theme_bytes, theme_name),
         daemon=True,
     )
     thread.start()
@@ -176,15 +179,23 @@ async def validate_wrapper(wrapper_file: UploadFile = File(...)):
 # Job worker
 # ---------------------------------------------------------------------------
 def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
-             sections_list, start_section=1):
+             sections_list, start_section=1, theme_bytes=None, theme_name=None):
     tmpdir = tempfile.mkdtemp(prefix="therefore_web_")
     try:
         from build_doc import generate
         from merge_docs import merge as merge_docs
+        from themes import load_theme
 
         xml_path = os.path.join(tmpdir, xml_name)
         with open(xml_path, "wb") as f:
             f.write(xml_bytes)
+
+        theme = None
+        if theme_bytes:
+            theme_path = os.path.join(tmpdir, theme_name or "theme.yaml")
+            with open(theme_path, "wb") as f:
+                f.write(theme_bytes)
+            theme = load_theme(theme_path)
 
         stem = os.path.splitext(xml_name)[0]
         doc_title = (stem.replace("TheConfiguration-", "")
@@ -199,6 +210,7 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
             body_only     = wrapper_bytes is not None,
             start_section = start_section,
             log_fn        = job.log_queue.put,
+            theme         = theme,
         )
         job.warnings = warnings
 
