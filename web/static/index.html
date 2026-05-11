@@ -337,20 +337,28 @@
 
     <hr class="divider">
 
-    <!-- Wrapper DOCX Upload -->
-    <div class="section-label">Base Word Document <span style="color:var(--muted)">(optional)</span></div>
-    <div class="drop-zone" id="docxZone">
-      <input type="file" id="docxInput" accept=".docx">
-      <span class="drop-icon">📄</span>
-      <div class="drop-title">Drop a wrapper .docx here</div>
-      <div class="drop-sub">or click to browse · use {{THEREFORE_CONTENT}} as insertion point</div>
-      <div class="file-name hidden" id="docxFileName">
-        <span id="docxFileNameText"></span>
-        <button class="remove-btn" id="docxRemove" title="Remove">✕</button>
+    <!-- Base Template Selection -->
+    <div class="section-label">Base Word Template <span style="color:var(--muted)">(optional)</span></div>
+    <select id="templateSelect" style="width:100%;padding:10px 12px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.9rem;cursor:pointer">
+      <option value="">None — standalone document</option>
+      <option value="__custom__">Custom upload…</option>
+    </select>
+
+    <div id="customTemplateRow" style="display:none;margin-top:12px">
+      <div class="drop-zone" id="docxZone">
+        <input type="file" id="docxInput" accept=".docx">
+        <span class="drop-icon">📄</span>
+        <div class="drop-title">Drop a wrapper .docx here</div>
+        <div class="drop-sub">or click to browse · use {{THEREFORE_CONTENT}} as insertion point</div>
+        <div class="file-name hidden" id="docxFileName">
+          <span id="docxFileNameText"></span>
+          <button class="remove-btn" id="docxRemove" title="Remove">✕</button>
+        </div>
       </div>
+      <div id="validationHint" style="display:none;font-size:0.82rem;margin-top:8px;font-weight:600"></div>
     </div>
-    <div id="validationHint" style="display:none;font-size:0.82rem;margin-top:8px;font-weight:600"></div>
-    <div id="startSectionRow" style="display:none;margin-top:12px;align-items:flex-start;flex-direction:column;gap:8px">
+
+    <div id="templateSectionRow" style="display:none;margin-top:12px;align-items:flex-start;flex-direction:column;gap:8px">
       <label class="sec-item" style="font-size:0.88rem">
         <input type="checkbox" id="includeSectionNums" style="width:15px;height:15px;accent-color:var(--blue)">
         Include section numbers
@@ -496,14 +504,16 @@ wireZone('docxZone', 'docxInput', 'docxFileName', 'docxFileNameText', 'docxRemov
     docxFile = f;
     openInstructions();
     validateWrapper(f);
-    document.getElementById('startSectionRow').style.display = 'flex';
+    document.getElementById('templateSectionRow').style.display = 'flex';
   },
   () => {
     docxFile = null;
     document.getElementById('docxZone').style.borderColor = '';
     const hint = document.getElementById('validationHint');
     hint.style.display = 'none';
-    document.getElementById('startSectionRow').style.display = 'none';
+    if (document.getElementById('templateSelect').value !== '__custom__') {
+      document.getElementById('templateSectionRow').style.display = 'none';
+    }
   }
 );
 
@@ -562,6 +572,50 @@ document.getElementById('selectNone').addEventListener('click', () => {
 function getSelectedSections() {
   return [...document.querySelectorAll('.sec-cb:checked')].map(cb => cb.value).join(',');
 }
+
+// ── Template handling ───────────────────────────────────────────────────────
+(async function loadTemplates() {
+  try {
+    const resp = await fetch('/templates');
+    const data = await resp.json();
+    const sel = document.getElementById('templateSelect');
+    // Keep first two options (None, Custom)
+    const customOpt = sel.querySelector('option[value="__custom__"]');
+    sel.innerHTML = '<option value="">None — standalone document</option>';
+    data.templates.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      sel.appendChild(opt);
+    });
+    sel.appendChild(customOpt);
+  } catch (_) {}
+})();
+
+document.getElementById('templateSelect').addEventListener('change', function() {
+  const customRow = document.getElementById('customTemplateRow');
+  const sectionRow = document.getElementById('templateSectionRow');
+  if (this.value === '__custom__') {
+    customRow.style.display = 'block';
+    sectionRow.style.display = 'flex';
+  } else if (this.value === '') {
+    customRow.style.display = 'none';
+    sectionRow.style.display = 'none';
+    // clear any custom file
+    docxFile = null;
+    document.getElementById('docxInput').value = '';
+    document.getElementById('docxFileName').classList.add('hidden');
+    document.getElementById('docxZone').classList.remove('has-file');
+  } else {
+    customRow.style.display = 'none';
+    sectionRow.style.display = 'flex';
+    // clear any custom file
+    docxFile = null;
+    document.getElementById('docxInput').value = '';
+    document.getElementById('docxFileName').classList.add('hidden');
+    document.getElementById('docxZone').classList.remove('has-file');
+  }
+});
 
 // ── Theme handling ──────────────────────────────────────────────────────────
 let themeFile = null;
@@ -626,9 +680,19 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
 
   const form = new FormData();
   form.append('xml_file', xmlFile);
-  if (docxFile) form.append('wrapper_file', docxFile);
   form.append('sections', getSelectedSections());
-  if (docxFile) {
+
+  // Template / wrapper
+  const templateSel = document.getElementById('templateSelect').value;
+  const hasWrapper = templateSel !== '';
+  if (templateSel === '__custom__' && docxFile) {
+    form.append('wrapper_file', docxFile);
+  } else if (templateSel && templateSel !== '__custom__') {
+    form.append('template_id', templateSel);
+  }
+
+  // Section numbering
+  if (hasWrapper) {
     const numbered = document.getElementById('includeSectionNums').checked;
     form.append('start_section', numbered ? (document.getElementById('startSection').value || '1') : '0');
   } else {

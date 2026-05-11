@@ -34,6 +34,22 @@ from themes import list_themes, load_theme
 
 app = FastAPI(title="Therefore Documentation Generator")
 
+TEMPLATES_DIR = ROOT / "templates"
+
+
+def list_templates() -> list[dict]:
+    """Return available base Word templates from the templates/ directory."""
+    if not TEMPLATES_DIR.exists():
+        return []
+    templates = []
+    for f in sorted(TEMPLATES_DIR.glob("*.docx")):
+        templates.append({
+            "id": f.stem,
+            "name": f.stem.replace("_", " ").replace("-", " ").title(),
+            "path": str(f),
+        })
+    return templates
+
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -79,10 +95,16 @@ async def get_themes():
     return {"themes": list_themes()}
 
 
+@app.get("/templates")
+async def get_templates():
+    return {"templates": list_templates()}
+
+
 @app.post("/generate")
 async def start_generate(
     xml_file:      UploadFile = File(...),
     wrapper_file:  UploadFile = File(None),
+    template_id:   str        = Form(""),
     theme_file:    UploadFile = File(None),
     theme_id:      str        = Form(""),
     sections:      str        = Form(""),
@@ -108,7 +130,7 @@ async def start_generate(
     thread = threading.Thread(
         target=_run_job,
         args=(job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
-              sections_list, start_section, theme_bytes, theme_name, img_format, theme_id),
+              sections_list, start_section, theme_bytes, theme_name, img_format, theme_id, template_id),
         daemon=True,
     )
     thread.start()
@@ -189,7 +211,7 @@ async def validate_wrapper(wrapper_file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
              sections_list, start_section=1, theme_bytes=None, theme_name=None,
-             img_format="png", theme_id=""):
+             img_format="png", theme_id="", template_id=""):
     tmpdir = tempfile.mkdtemp(prefix="therefore_web_")
     try:
         from build_doc import generate
@@ -212,6 +234,16 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
                     theme = load_theme(t["path"])
                     break
 
+        # Resolve template selection
+        actual_wrapper_bytes = wrapper_bytes
+        actual_wrapper_name = wrapper_name
+        if template_id and not wrapper_bytes:
+            for t in list_templates():
+                if t["id"] == template_id:
+                    actual_wrapper_bytes = open(t["path"], "rb").read()
+                    actual_wrapper_name = os.path.basename(t["path"])
+                    break
+
         stem = os.path.splitext(xml_name)[0]
         doc_title = (stem.replace("TheConfiguration-", "")
                          .replace("TheConfiguration", "")
@@ -222,7 +254,7 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
         warnings = generate(
             xml_path, output_path,
             sections      = sections_list,
-            body_only     = wrapper_bytes is not None,
+            body_only     = actual_wrapper_bytes is not None,
             start_section = start_section,
             log_fn        = job.log_queue.put,
             theme         = theme,
@@ -230,10 +262,10 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
         )
         job.warnings = warnings
 
-        if wrapper_bytes:
-            wrapper_path = os.path.join(tmpdir, wrapper_name)
+        if actual_wrapper_bytes:
+            wrapper_path = os.path.join(tmpdir, actual_wrapper_name)
             with open(wrapper_path, "wb") as f:
-                f.write(wrapper_bytes)
+                f.write(actual_wrapper_bytes)
             merged_path = os.path.join(tmpdir, f"merged_{output_name}")
             job.log_queue.put("Merging into wrapper document...")
             merge_docs(wrapper_path, output_path, merged_path)
