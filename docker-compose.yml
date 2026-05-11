@@ -1,0 +1,8 @@
+services:
+  therefore-docs:
+    build: .
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    # Chromium needs this in some environments
+    shm_size: '256mb'

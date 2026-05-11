@@ -1,0 +1,8 @@
+.env
+data/
+node_modules/
+*.docx
+!**/templates/*.docx
+__pycache__/
+*.pyc
+.DS_Store

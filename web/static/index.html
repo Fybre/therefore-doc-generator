@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Therefore Documentation Generator</title>
+<style>
+  :root {
+    --blue:       #4A9EDB;
+    --blue-mid:   #5BAEE8;
+    --blue-light: #1A2F45;
+    --bg:         #0F1117;
+    --card:       #1A1D27;
+    --card2:      #22263A;
+    --border:     #2E3348;
+    --text:       #E2E8F0;
+    --muted:      #8892A4;
+    --success:    #68D391;
+    --success-bg: #1A3028;
+    --error:      #FC8181;
+    --error-bg:   #2D1515;
+    --radius:     10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: #111420;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+  }
+  header svg { flex-shrink: 0; }
+  header h1 { font-size: 1.25rem; font-weight: 600; letter-spacing: 0.01em; }
+  header p  { font-size: 0.82rem; opacity: 0.75; margin-top: 2px; }
+
+  main {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 40px 20px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 32px rgba(0,0,0,0.5);
+    width: 100%;
+    max-width: 680px;
+    padding: 36px;
+  }
+
+  .section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+
+  /* Drop zones */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    position: relative;
+    background: var(--card2);
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--blue-mid);
+    background: var(--blue-light);
+  }
+  .drop-zone.has-file {
+    border-color: var(--blue);
+    border-style: solid;
+    background: #162032;
+  }
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .drop-icon { font-size: 2rem; margin-bottom: 8px; display: block; }
+  .drop-title { font-weight: 600; font-size: 0.95rem; color: var(--blue); }
+  .drop-sub   { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+  .file-name  {
+    display: none;
+    margin-top: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--blue);
+    background: #0F1117;
+    border: 1px solid var(--blue);
+    border-radius: 6px;
+    padding: 6px 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .file-name.hidden { display: none !important; }
+  .file-name .remove-btn {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 1rem;
+    line-height: 1;
+    border: none;
+    background: none;
+    padding: 0 0 0 4px;
+  }
+  .file-name .remove-btn:hover { color: var(--error); }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 28px 0;
+  }
+
+
+  /* Wrapper instructions */
+  .wrapper-instructions {
+    margin-top: 14px;
+  }
+  .instr-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--blue-mid);
+    cursor: pointer;
+    user-select: none;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+  .instr-toggle:hover { color: var(--blue); }
+  .instr-toggle .chevron {
+    display: inline-block;
+    transition: transform 0.2s;
+    font-style: normal;
+  }
+  .instr-toggle.open .chevron { transform: rotate(90deg); }
+
+  .instr-body {
+    display: none;
+    margin-top: 10px;
+    font-size: 0.82rem;
+    line-height: 1.7;
+    color: var(--text);
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+  }
+  .instr-body.open { display: block; }
+
+  .instr-body h4 {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--blue);
+    margin: 12px 0 4px;
+  }
+  .instr-body h4:first-child { margin-top: 0; }
+
+  .instr-body ol, .instr-body ul {
+    padding-left: 18px;
+    margin: 4px 0;
+  }
+  .instr-body li { margin: 3px 0; }
+
+  .instr-body code {
+    background: #0F1117;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.9em;
+    color: var(--blue);
+    white-space: nowrap;
+  }
+
+  .instr-body .tip {
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: #162032;
+    border-left: 3px solid var(--blue-mid);
+    border-radius: 0 4px 4px 0;
+    color: var(--blue-mid);
+    font-size: 0.8rem;
+  }
+
+  /* Generate button */
+  .btn-generate {
+    width: 100%;
+    margin-top: 28px;
+    padding: 14px;
+    background: var(--blue);
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .btn-generate:hover:not(:disabled) { background: var(--blue-mid); }
+  .btn-generate:active:not(:disabled) { transform: scale(0.99); }
+  .btn-generate:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  /* Status */
+  .status {
+    display: none;
+    margin-top: 20px;
+    padding: 14px 16px;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .status.visible { display: flex; }
+  .status.loading  { background: #162032; color: var(--blue); }
+  .status.success  { background: var(--success-bg); color: var(--success); }
+  .status.error    { background: var(--error-bg); color: var(--error); }
+
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2.5px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .status-text { flex: 1; }
+  .status-text strong { display: block; margin-bottom: 2px; }
+
+  .progress-log {
+    margin-top: 8px;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.78rem;
+    opacity: 0.8;
+    white-space: pre-wrap;
+    max-height: 120px;
+    overflow-y: auto;
+  }
+
+  .section-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px 16px;
+    margin-top: 4px;
+  }
+  .sec-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .sec-item input[type=checkbox] {
+    width: 15px; height: 15px;
+    accent-color: var(--blue);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .link-btn {
+    background: none;
+    border: none;
+    color: var(--blue);
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+  }
+  .link-btn:hover { color: var(--blue-mid); }
+
+  footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+    <rect width="32" height="32" rx="6" fill="white" fill-opacity="0.15"/>
+    <path d="M8 10h16M8 16h10M8 22h12" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="24" cy="22" r="4" fill="#2E74B5" stroke="white" stroke-width="1.5"/>
+    <path d="M22.5 22l1 1 2-2" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div>
+    <h1>Therefore Documentation Generator</h1>
+    <p>Generate Word documentation from a Therefore configuration export</p>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+
+    <!-- XML Upload -->
+    <div class="section-label">Configuration File <span style="color:#E53E3E">*</span></div>
+    <div class="drop-zone" id="xmlZone">
+      <input type="file" id="xmlInput" accept=".xml">
+      <span class="drop-icon">📋</span>
+      <div class="drop-title">Drop TheConfiguration XML here</div>
+      <div class="drop-sub">or click to browse · .xml files only</div>
+      <div class="file-name hidden" id="xmlFileName">
+        <span id="xmlFileNameText"></span>
+        <button class="remove-btn" id="xmlRemove" title="Remove">✕</button>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <!-- Wrapper DOCX Upload -->
+    <div class="section-label">Base Word Document <span style="color:var(--muted)">(optional)</span></div>
+    <div class="drop-zone" id="docxZone">
+      <input type="file" id="docxInput" accept=".docx">
+      <span class="drop-icon">📄</span>
+      <div class="drop-title">Drop a wrapper .docx here</div>
+      <div class="drop-sub">or click to browse · use {{THEREFORE_CONTENT}} as insertion point</div>
+      <div class="file-name hidden" id="docxFileName">
+        <span id="docxFileNameText"></span>
+        <button class="remove-btn" id="docxRemove" title="Remove">✕</button>
+      </div>
+    </div>
+    <div id="validationHint" style="display:none;font-size:0.82rem;margin-top:8px;font-weight:600"></div>
+    <div id="startSectionRow" style="display:none;margin-top:12px;align-items:flex-start;flex-direction:column;gap:8px">
+      <label class="sec-item" style="font-size:0.88rem">
+        <input type="checkbox" id="includeSectionNums" style="width:15px;height:15px;accent-color:var(--blue)">
+        Include section numbers
+      </label>
+      <div id="startFromRow" style="display:none;align-items:center;gap:8px;padding-left:22px">
+        <span style="font-size:0.82rem;color:var(--muted)">Start from section</span>
+        <input type="number" id="startSection" value="1" min="1" max="99"
+               style="width:52px;padding:4px 8px;background:var(--card2);border:1px solid var(--border);
+                      border-radius:6px;color:var(--text);font-size:0.88rem;text-align:center">
+      </div>
+    </div>
+
+    <div class="wrapper-instructions">
+      <button class="instr-toggle" id="instrToggle">
+        <i class="chevron">›</i> How to set up your wrapper document
+      </button>
+      <div class="instr-body" id="instrBody">
+        <p>Add a paragraph containing <code>{{THEREFORE_CONTENT}}</code> in your wrapper
+        document where you want the Therefore documentation inserted. That line will be
+        replaced with the generated content.</p>
+      </div>
+    </div>
+
+
+    <hr class="divider">
+
+    <!-- Section selection -->
+    <div class="section-label">Sections to include</div>
+    <div class="section-grid" id="sectionGrid">
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="categories"       checked> Categories</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="indexing_profiles" checked> Indexing Profiles</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="workflows"        checked> Workflows</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="eforms"           checked> eForms</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="relationships"    checked> Category Relationships</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="folder_structure" checked> Folder Structure</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="keyword_dicts"    checked> Keyword Dictionaries</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="queries"          checked> Queries</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="reports"          checked> Reports</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="stamps"           checked> Stamps</label>
+    </div>
+    <div style="margin-top:8px">
+      <button class="link-btn" id="selectAll">Select all</button>
+      <span style="color:var(--border);margin:0 6px">|</span>
+      <button class="link-btn" id="selectNone">Clear all</button>
+    </div>
+
+    <!-- Generate -->
+    <button class="btn-generate" id="generateBtn" disabled>
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <path d="M3 9l4 4 8-8" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Generate Documentation
+    </button>
+
+    <!-- Status -->
+    <div class="status" id="status">
+      <div class="spinner" id="statusSpinner"></div>
+      <div class="status-text">
+        <strong id="statusTitle"></strong>
+        <div id="statusSub"></div>
+        <div class="progress-log" id="progressLog"></div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>Therefore Documentation Generator</footer>
+
+<script>
+// File state
+let xmlFile  = null;
+let docxFile = null;
+
+// ── Drop zone wiring ────────────────────────────────────────────────────────
+function wireZone(zoneId, inputId, fileNameId, fileNameTextId, removeId, onSet, onClear) {
+  const zone     = document.getElementById(zoneId);
+  const input    = document.getElementById(inputId);
+  const nameEl   = document.getElementById(fileNameId);
+  const nameText = document.getElementById(fileNameTextId);
+  const removeBtn = document.getElementById(removeId);
+
+  function setFile(file) {
+    nameText.textContent = file.name;
+    nameEl.classList.remove('hidden');
+    zone.classList.add('has-file');
+    onSet(file);
+  }
+  function clearFile() {
+    input.value = '';
+    nameEl.classList.add('hidden');
+    zone.classList.remove('has-file');
+    onClear();
+  }
+
+  input.addEventListener('change', e => { if (e.target.files[0]) setFile(e.target.files[0]); });
+  removeBtn.addEventListener('click', e => { e.stopPropagation(); clearFile(); });
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) { input.files = e.dataTransfer.files; setFile(file); }
+  });
+}
+
+wireZone('xmlZone',  'xmlInput',  'xmlFileName',  'xmlFileNameText',  'xmlRemove',
+  f => { xmlFile = f;  updateBtn(); },
+  ()  => { xmlFile = null; updateBtn(); }
+);
+
+wireZone('docxZone', 'docxInput', 'docxFileName', 'docxFileNameText', 'docxRemove',
+  f => {
+    docxFile = f;
+    openInstructions();
+    validateWrapper(f);
+    document.getElementById('startSectionRow').style.display = 'flex';
+  },
+  () => {
+    docxFile = null;
+    document.getElementById('docxZone').style.borderColor = '';
+    const hint = document.getElementById('validationHint');
+    hint.style.display = 'none';
+    document.getElementById('startSectionRow').style.display = 'none';
+  }
+);
+
+// Instructions toggle
+const instrToggle = document.getElementById('instrToggle');
+const instrBody   = document.getElementById('instrBody');
+
+function openInstructions() {
+  instrToggle.classList.add('open');
+  instrBody.classList.add('open');
+}
+instrToggle.addEventListener('click', () => {
+  const open = instrBody.classList.toggle('open');
+  instrToggle.classList.toggle('open', open);
+});
+
+function updateBtn() {
+  document.getElementById('generateBtn').disabled = !xmlFile;
+}
+
+// ── Wrapper placeholder validation ──────────────────────────────────────────
+async function validateWrapper(file) {
+  const form = new FormData();
+  form.append('wrapper_file', file);
+  try {
+    const resp = await fetch('/validate-wrapper', { method: 'POST', body: form });
+    const data = await resp.json();
+    const zone = document.getElementById('docxZone');
+    const hint = document.getElementById('validationHint');
+    if (data.found) {
+      zone.style.borderColor = 'var(--success)';
+      hint.textContent = '✓ Placeholder found';
+      hint.style.color = 'var(--success)';
+    } else {
+      zone.style.borderColor = 'var(--error)';
+      hint.textContent = '⚠ {{THEREFORE_CONTENT}} placeholder not found — content will be appended at end';
+      hint.style.color = 'var(--error)';
+    }
+    hint.style.display = 'block';
+  } catch (_) {}
+}
+
+// ── Section number checkbox ──────────────────────────────────────────────────
+document.getElementById('includeSectionNums').addEventListener('change', function() {
+  document.getElementById('startFromRow').style.display = this.checked ? 'flex' : 'none';
+});
+
+// ── Section selection ────────────────────────────────────────────────────────
+document.getElementById('selectAll').addEventListener('click', () => {
+  document.querySelectorAll('.sec-cb').forEach(cb => cb.checked = true);
+});
+document.getElementById('selectNone').addEventListener('click', () => {
+  document.querySelectorAll('.sec-cb').forEach(cb => cb.checked = false);
+});
+
+function getSelectedSections() {
+  return [...document.querySelectorAll('.sec-cb:checked')].map(cb => cb.value).join(',');
+}
+
+// ── Wrapper placeholder validation ──────────────────────────────────────────
+
+// ── Generate ────────────────────────────────────────────────────────────────
+document.getElementById('generateBtn').addEventListener('click', async () => {
+  if (!xmlFile) return;
+
+  const btn    = document.getElementById('generateBtn');
+  const status = document.getElementById('status');
+  const spinner = document.getElementById('statusSpinner');
+  const title  = document.getElementById('statusTitle');
+  const sub    = document.getElementById('statusSub');
+  const log    = document.getElementById('progressLog');
+
+  btn.disabled = true;
+  status.className = 'status visible loading';
+  spinner.style.display = 'block';
+  title.textContent = 'Starting…';
+  sub.textContent   = '';
+  log.textContent   = '';
+
+  const form = new FormData();
+  form.append('xml_file', xmlFile);
+  if (docxFile) form.append('wrapper_file', docxFile);
+  form.append('sections', getSelectedSections());
+  if (docxFile) {
+    const numbered = document.getElementById('includeSectionNums').checked;
+    form.append('start_section', numbered ? (document.getElementById('startSection').value || '1') : '0');
+  } else {
+    form.append('start_section', '1');
+  }
+
+  try {
+    // Step 1 — start the job
+    const startResp = await fetch('/generate', { method: 'POST', body: form });
+    if (!startResp.ok) {
+      const err = await startResp.json().catch(() => ({ detail: startResp.statusText }));
+      throw new Error(err.detail || 'Server error');
+    }
+    const { job_id } = await startResp.json();
+
+    title.textContent = 'Generating documentation…';
+    sub.textContent   = 'This may take a minute for large configurations.';
+
+    // Step 2 — stream progress via SSE
+    await new Promise((resolve, reject) => {
+      const es = new EventSource(`/progress/${job_id}`);
+
+      es.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+
+        if (msg.type === 'log') {
+          log.textContent += msg.text + '\n';
+          log.scrollTop = log.scrollHeight;
+
+        } else if (msg.type === 'done') {
+          es.close();
+
+          // Step 3 — trigger download
+          const a = Object.assign(document.createElement('a'), {
+            href:     `/download/${job_id}`,
+            download: msg.filename,
+          });
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+
+          status.className = 'status visible success';
+          spinner.style.display = 'none';
+          title.textContent = 'Done! Your document is downloading.';
+          sub.textContent   = msg.filename;
+
+          if (msg.warnings && msg.warnings.length > 0) {
+            log.textContent += '\n⚠ Warnings:\n' + msg.warnings.map(w => '  • ' + w).join('\n');
+            log.style.display = 'block';
+          }
+
+          resolve();
+
+        } else if (msg.type === 'error') {
+          es.close();
+          reject(new Error(msg.message));
+        }
+      };
+
+      es.onerror = () => {
+        es.close();
+        reject(new Error('Connection lost'));
+      };
+    });
+
+  } catch (err) {
+    status.className = 'status visible error';
+    spinner.style.display = 'none';
+    title.textContent = 'Generation failed';
+    sub.textContent   = err.message;
+  } finally {
+    btn.disabled = !xmlFile;
+  }
+});
+</script>
+</body>
+</html>
