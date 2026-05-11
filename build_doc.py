@@ -1803,14 +1803,17 @@ def build_relationship_diagram(doc, root, maps, categories, section_no,
         if m and tno:
             dt_to_cat_no[tno] = m.group(1)
 
-    # indexing profile no → target category no  (DefId/DefNo)
+    # indexing profile no → (target category no, profile name)
     ixp_to_cat = {}
+    ixp_name = {}
     for p in (root.find("IxProfiles") or []):
         pno   = get_text(p, "IndexingProfileNo")
         def_el = p.find("DefId")
         tgt_no = get_text(def_el, "DefNo") if def_el is not None else None
+        pname = get_text(p, "Name") or f"Profile_{pno}"
         if pno and tgt_no:
             ixp_to_cat[pno] = tgt_no
+            ixp_name[pno] = pname
 
     # ── Collect edges ──────────────────────────────────────────────────────
     # (src_id, tgt_id, label, edge_type)
@@ -1855,15 +1858,18 @@ def build_relationship_diagram(doc, root, maps, categories, section_no,
 
     # eForm → Category
     ef_el = root.find("EForms")
+    ef_names = {}
     for ef in (ef_el if ef_el is not None else []):
         ef_name_str = ef.findtext("FName") or "EForm"
         ef_no       = ef.findtext("FNo") or "x"
+        ef_names[ef_no] = ef_name_str
         pno         = ef.findtext("IxProfNo")
         cat_no_str  = ixp_to_cat.get(pno)
         if cat_no_str:
             cat_no_int = _to_int(cat_no_str)
             if cat_no_int in cat_no_to_name:
-                add_edge(f"ef_{ef_no}", f"cat_{cat_no_int}", "", "eform_cat")
+                prof_name = ixp_name.get(pno, "")
+                add_edge(f"ef_{ef_no}", f"cat_{cat_no_int}", prof_name, "eform_cat")
 
     cat_cat_edges  = [(s, t, l) for s, t, l, e in edges if e == "cat_cat"]
     cat_kw_edges   = [(s, t, l) for s, t, l, e in edges if e == "cat_kw"]
@@ -1883,6 +1889,93 @@ def build_relationship_diagram(doc, root, maps, categories, section_no,
     doc.add_page_break()
     _manual_heading(doc, sec_heading(section_no, "Category Relationships"), 15, 16, 5, bottom_border=True)
 
+    # ── Unified ecosystem diagram ─────────────────────────────────────────
+    # Build a single Mermaid diagram with categories, keyword dicts, eForms
+    lines = ["%%{init: {'flowchart': {'nodeSpacing': 45, 'rankSpacing': 70}}}%%",
+             "flowchart LR"]
+    declared = set()
+
+    def declare_node(nid, label, shape):
+        if nid in declared:
+            return
+        declared.add(nid)
+        sid = safe_id(nid)
+        ml = mml(label)
+        if shape == "diamond":
+            lines.append(f'    {sid}{{"{ml}"}}')
+        elif shape == "hexagon":
+            lines.append(f'    {sid}{{"{{"{ml}"}}}}')
+        elif shape == "parallelogram":
+            lines.append(f'    {sid}[/{ml}/]')
+        else:
+            lines.append(f'    {sid}["{ml}"]')
+
+    # Category → Category edges (solid)
+    for src, tgt, lbl in cat_cat_edges:
+        declare_node(src, cat_name(src), "round")
+        declare_node(tgt, cat_name(tgt), "round")
+    for src, tgt, lbl in cat_cat_edges:
+        sid, tid = safe_id(src), safe_id(tgt)
+        if lbl:
+            lines.append(f'    {sid} -->|"{mml(lbl)}"| {tid}')
+        else:
+            lines.append(f'    {sid} --> {tid}')
+
+    # Category → Keyword Dictionary edges (dotted)
+    for src, tgt, lbl in cat_kw_edges:
+        declare_node(src, cat_name(src), "round")
+        kw_no = int(tgt[3:])
+        kw_label = kw_dicts.get(kw_no, f"Dict {kw_no}")
+        declare_node(tgt, kw_label, "diamond")
+    for src, tgt, lbl in cat_kw_edges:
+        sid, tid = safe_id(src), safe_id(tgt)
+        lines.append(f'    {sid} -.-> {tid}')
+
+    # eForm → Category edges (dashed)
+    for src, tgt, lbl in eform_edges:
+        ef_no = src[3:]
+        ef_label = ef_names.get(ef_no, f"EForm {ef_no}")
+        declare_node(src, ef_label, "hexagon")
+        declare_node(tgt, cat_name(tgt), "round")
+    for src, tgt, lbl in eform_edges:
+        sid, tid = safe_id(src), safe_id(tgt)
+        if lbl:
+            lines.append(f'    {sid} -.->|"{mml(lbl)}"| {tid}')
+        else:
+            lines.append(f'    {sid} -.-> {tid}')
+
+    # Class definitions from theme
+    mm = _theme.mermaid
+    def _mm_cls(key, default_fill, default_stroke):
+        cfg = mm.get(key, {})
+        fill = cfg.get("fill", default_fill)
+        stroke = cfg.get("stroke", default_stroke)
+        return f"    classDef {key} fill:#{fill},stroke:#{stroke},stroke-width:2px"
+
+    lines.append(_mm_cls("catNode", "D6E4F0", "1F4E79"))
+    lines.append(_mm_cls("kwNode", "E8D6F0", "6C3483"))
+    lines.append(_mm_cls("efNode", "D6F0E8", "1E8449"))
+
+    # Assign classes
+    for src, tgt, _ in cat_cat_edges:
+        lines.append(f"    class {safe_id(src)} catNode")
+        lines.append(f"    class {safe_id(tgt)} catNode")
+    for src, tgt, _ in cat_kw_edges:
+        lines.append(f"    class {safe_id(src)} catNode")
+        lines.append(f"    class {safe_id(tgt)} kwNode")
+    for src, tgt, _ in eform_edges:
+        lines.append(f"    class {safe_id(src)} efNode")
+        lines.append(f"    class {safe_id(tgt)} catNode")
+
+    mermaid_src = "\n".join(lines)
+
+    if render_dir and declared:
+        img = _render_mermaid(mermaid_src,
+                              os.path.join(render_dir, "ecosystem_diagram.png"),
+                              render_dir, width=1600, height=4000)
+        if img:
+            _embed_img(doc, img)
+
     # ── 1. Category cross-references ──────────────────────────────────────
     if cat_cat_edges:
         blue_heading(doc, "Category Cross-references", level=2)
@@ -1890,40 +1983,10 @@ def build_relationship_diagram(doc, root, maps, categories, section_no,
             "Categories that reference fields from another category via a linked data type."
         )
 
-        # Mermaid diagram — only cat→cat, much more readable
-        lines = ["%%{init: {'flowchart': {'nodeSpacing': 40, 'rankSpacing': 60}}}%%",
-                 "graph LR"]
-        declared = set()
-        def declare_cat(nid):
-            if nid not in declared:
-                declared.add(nid)
-                lines.append(f'    {safe_id(nid)}["{mml(cat_name(nid))}"]')
-
-        for src, tgt, lbl in cat_cat_edges:
-            declare_cat(src); declare_cat(tgt)
-        for src, tgt, lbl in cat_cat_edges:
-            sid, tid = safe_id(src), safe_id(tgt)
-            if lbl:
-                lines.append(f'    {sid} -->|"{mml(lbl)}"| {tid}')
-            else:
-                lines.append(f'    {sid} --> {tid}')
-        lines.append("    classDef cat fill:#D6E4F0,stroke:#1F4E79,stroke-width:2px,color:#1A202C")
-        for n in declared:
-            lines.append(f"    class {safe_id(n)} cat")
-
-        if render_dir:
-            img = _render_mermaid("\n".join(lines),
-                                  os.path.join(render_dir, "cat_crossref.png"),
-                                  render_dir, width=1400, height=4000)
-            if img:
-                _embed_img(doc, img)
-
-        # Table: Source Category | Field | Target Category
         t = doc.add_table(rows=1, cols=3)
         t.style = "Table Grid"
         for i, h in enumerate(["Source Category", "Via Field", "Target Category"]):
             hdr_cell(t.rows[0].cells, i, h)
-        # Group by source category
         from itertools import groupby
         sorted_edges = sorted(cat_cat_edges, key=lambda e: cat_name(e[0]))
         for idx, (src, tgt, lbl) in enumerate(sorted_edges):
@@ -1941,7 +2004,6 @@ def build_relationship_diagram(doc, root, maps, categories, section_no,
         doc.add_paragraph(
             "Categories that use a keyword (pick-list) dictionary for one or more fields."
         )
-        # Group: dictionary → [categories]
         from collections import defaultdict
         kw_to_cats = defaultdict(set)
         for src, tgt, _ in cat_kw_edges:
@@ -1974,12 +2036,11 @@ def build_relationship_diagram(doc, root, maps, categories, section_no,
         t.style = "Table Grid"
         for i, h in enumerate(["eForm", "Submits to Category"]):
             hdr_cell(t.rows[0].cells, i, h)
-        for idx, (src, tgt, _) in enumerate(eform_edges):
+        for idx, (src, tgt, lbl) in enumerate(eform_edges):
             fill = _theme.hex("grey") if idx % 2 else _theme.hex("white")
             rc   = t.add_row().cells
             ef_no   = src[3:]
-            ef_name = next((ef.findtext("FName") for ef in (ef_el or [])
-                            if ef.findtext("FNo") == ef_no), f"EForm {ef_no}")
+            ef_name = ef_names.get(ef_no, f"EForm {ef_no}")
             body_cell(rc, 0, ef_name, fill, bold=True)
             body_cell(rc, 1, cat_name(tgt), fill)
         set_col_widths(t, [8.0, 8.5])
