@@ -1,0 +1,87 @@
+name: "Canon Corporate"
+
+# Matches the Canon document style:
+#   Red H1 with red underline, black subheads, light-grey table headers,
+#   clean sans-serif typography, minimal borders.
+
+colors:
+  primary: "CC0000"       # Canon red for headings & accents
+  grey: "F2F2F2"          # table header background
+  white: "FFFFFF"
+  black: "000000"
+  border: "D9D9D9"        # subtle table borders
+  accent: "CC0000"
+  danger: "CC0000"
+  warning: "E6A700"
+  info: "0066CC"
+  muted: "666666"
+  light_muted: "999999"
+  code_bg: "F8F8F8"
+  code_border: "E0E0E0"
+  footer_border: "D9D9D9"
+  shading: "F8F8F8"
+  table_alt: "F2F2F2"
+  table_border: "D9D9D9"
+  h1_border: "CC0000"     # red underline on H1
+  para_border: "E0E0E0"
+  render_note: "999999"
+  description: "555555"
+  text_dark: "222222"
+  footer_text: "999999"
+
+fonts:
+  body: "Arial"
+  mono: "Courier New"
+
+heading_sizes:
+  h1: 16
+  h2: 13
+  h3: 11
+  title: 24
+  subtitle: 14
+
+renderer:
+  bg: "FFFFFF"
+  white: "FFFFFF"
+  black: "000000"
+  border: "D9D9D9"
+  header: "F2F2F2"
+  tab_active: "FFFFFF"
+  tab_inactive: "F2F2F2"
+  chrome_bg: "F8F8F8"
+  chrome_border: "D9D9D9"
+  scroll_thumb: "D9D9D9"
+  scroll_arrow: "666666"
+  date_bg: "F8F8F8"
+  lookup_btn: "F8F8F8"
+  panel_header: "CC0000"
+  panel_header_text: "FFFFFF"
+  panel_bg: "FFFFFF"
+  panel_border: "D9D9D9"
+  input_bg: "FFFFFF"
+  input_border: "D9D9D9"
+  input_placeholder: "999999"
+  label: "222222"
+  button_primary: "CC0000"
+  button_secondary: "666666"
+  button_text: "FFFFFF"
+  checkbox_tick: "CC0000"
+  grid_header: "F2F2F2"
+  grid_border: "D9D9D9"
+  page_separator: "D9D9D9"
+  page_title_bg: "F8F8F8"
+  page_title_fg: "CC0000"
+  html_bg: "FFF8E1"
+  html_border: "FFE082"
+  html_text: "5D4037"
+  required: "CC0000"
+
+mermaid:
+  startNode:  {fill: "FFEBEE", stroke: "CC0000"}
+  endNode:    {fill: "FFEBEE", stroke: "CC0000"}
+  manualNode: {fill: "E3F2FD", stroke: "0066CC"}
+  autoNode:   {fill: "FFF3E0", stroke: "E65100"}
+  catNode:    {fill: "FAFAFA", stroke: "CC0000"}
+  kwNode:     {fill: "F3E5F5", stroke: "7B1FA2"}
+  efNode:     {fill: "E8F5E9", stroke: "2E7D32"}
+  dtNode:     {fill: "FFF8E1", stroke: "F57F17"}
