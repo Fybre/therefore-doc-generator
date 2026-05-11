@@ -817,7 +817,7 @@ def build_overview(doc, counts, section_no=1):
 # ---------------------------------------------------------------------------
 # Section: categories
 # ---------------------------------------------------------------------------
-def _embed_images(doc, name, cat_elem, render_dir):
+def _embed_images(doc, name, cat_elem, render_dir, ext=".png"):
     ctgry_no = cat_elem.findtext("CtgryNo") or "x"
     if cat_has_tabs(cat_elem):
         fields_el = cat_elem.find("Fields")
@@ -825,7 +825,7 @@ def _embed_images(doc, name, cat_elem, render_dir):
             # tab_names_for_cat only returns visible tabs — but render now includes
             # all tabs, so scan the render dir for any matching tab images
             for tab in _all_tab_names(fields_el):
-                img = os.path.join(render_dir, f"{safe_fn(name)}_{ctgry_no}_tab_{safe_fn(tab)}.png")
+                img = os.path.join(render_dir, f"{safe_fn(name)}_{ctgry_no}_tab_{safe_fn(tab)}{ext}")
                 if os.path.exists(img):
                     p = doc.add_paragraph()
                     p.add_run(f"Tab: {tab}").bold = True
@@ -833,7 +833,7 @@ def _embed_images(doc, name, cat_elem, render_dir):
                     pp.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     pp.add_run().add_picture(img, width=Cm(14.0))
     else:
-        img = os.path.join(render_dir, f"{safe_fn(name)}_{ctgry_no}.png")
+        img = os.path.join(render_dir, f"{safe_fn(name)}_{ctgry_no}{ext}")
         if os.path.exists(img):
             pp = doc.add_paragraph()
             pp.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -860,13 +860,14 @@ def build_fields_table(doc, rows):
     set_col_widths(t, [1.2, 5.8, 3.6, 1.3, 5.5])
 
 
-def build_categories(doc, categories, render_dir, include_images, maps, section_no=2):
+def build_categories(doc, categories, render_dir, include_images, maps, section_no=2, img_format="png"):
     _manual_heading(doc, sec_heading(section_no, "Categories"), 15, 16, 5, bottom_border=True)
     doc.add_paragraph(
         "This section documents all category index forms, "
         "including visual renders and field definitions."
     )
     fp_map = maps["folder_paths"]
+    ext = ".svg" if img_format == "svg" else ".png"
     for ctgry_no, name, folder_no, cat_elem in categories:
         meta = f"(Category No: {show_id(ctgry_no)})"
         blue_heading(doc, name, level=2, meta=meta)
@@ -885,7 +886,7 @@ def build_categories(doc, categories, render_dir, include_images, maps, section_
             dp.runs[0].italic = True
 
         if include_images and render_dir:
-            _embed_images(doc, name, cat_elem, render_dir)
+            _embed_images(doc, name, cat_elem, render_dir, ext=ext)
 
         build_fields_table(doc, category_fields(cat_elem, maps))
         doc.add_paragraph()
@@ -2067,6 +2068,7 @@ def generate(
     start_section: int  = 1,
     log_fn=None,
     theme: Theme = None,
+    img_format: str = "png",
 ) -> list:
     """
     Generate a Therefore documentation Word document from an XML export.
@@ -2097,6 +2099,7 @@ def generate(
         body_only        = body_only,
         active_sections  = active_sections,
         start_section    = start_section,
+        img_format       = img_format,
     )
 
     warnings = []
@@ -2166,38 +2169,55 @@ def _main_impl(args, warnings=None):
     render_dir     = None
     _tmp_dir       = None
     pil_font       = None   # shared PIL font for category + workflow renders
+    img_format     = getattr(args, "img_format", "png")
 
     if include_images:
-        try:
-            from render_categories import render_simple_category, render_tabbed_category
-            from PIL import ImageFont
+        render_dir = args.render_dir or tempfile.mkdtemp(prefix="therefore_renders_")
+        if args.render_dir:
+            os.makedirs(render_dir, exist_ok=True)
+        else:
+            _tmp_dir = render_dir
+
+        if img_format == "svg":
             try:
-                pil_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
-            except Exception:
+                from render_categories_svg import render_simple_category, render_tabbed_category
+                print(f"Rendering {len(categories)} categories to {render_dir} (SVG) ...")
+                for _no, name, _fno, cat_elem in categories:
+                    if cat_has_tabs(cat_elem):
+                        render_tabbed_category(name, cat_elem, render_dir, theme=_theme)
+                    else:
+                        render_simple_category(name, cat_elem, render_dir, theme=_theme)
+                print("SVG rendering complete.")
+            except ImportError as e:
+                msg = f"SVG rendering unavailable ({e}) — continuing without images."
+                print(f"Warning: {msg}")
+                warnings.append(msg)
+                include_images = False
+        else:
+            try:
+                from render_categories import render_simple_category, render_tabbed_category
+                from PIL import ImageFont
                 try:
-                    pil_font = ImageFont.truetype("arial.ttf", 11)
+                    pil_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
                 except Exception:
-                    pil_font = ImageFont.load_default()
+                    try:
+                        pil_font = ImageFont.truetype("arial.ttf", 11)
+                    except Exception:
+                        pil_font = ImageFont.load_default()
 
-            render_dir = args.render_dir or tempfile.mkdtemp(prefix="therefore_renders_")
-            if args.render_dir:
-                os.makedirs(render_dir, exist_ok=True)
-            else:
-                _tmp_dir = render_dir
+                print(f"Rendering {len(categories)} categories to {render_dir} ...")
+                for _no, name, _fno, cat_elem in categories:
+                    if cat_has_tabs(cat_elem):
+                        render_tabbed_category(name, cat_elem, render_dir, pil_font)
+                    else:
+                        render_simple_category(name, cat_elem, render_dir, pil_font)
+                print("Rendering complete.")
 
-            print(f"Rendering {len(categories)} categories to {render_dir} ...")
-            for _no, name, _fno, cat_elem in categories:
-                if cat_has_tabs(cat_elem):
-                    render_tabbed_category(name, cat_elem, render_dir, pil_font)
-                else:
-                    render_simple_category(name, cat_elem, render_dir, pil_font)
-            print("Rendering complete.")
-
-        except ImportError as e:
-            msg = f"Image rendering unavailable ({e}) — continuing without images."
-            print(f"Warning: {msg}")
-            warnings.append(msg)
-            include_images = False
+            except ImportError as e:
+                msg = f"Image rendering unavailable ({e}) — continuing without images."
+                print(f"Warning: {msg}")
+                warnings.append(msg)
+                include_images = False
 
     # Build document
     print("Building document ...")
@@ -2271,7 +2291,7 @@ def _main_impl(args, warnings=None):
     # Categories
     if "categories" in sec:
         build_categories(doc, categories, render_dir, include_images, maps,
-                         section_no=_next_sn())
+                         section_no=_next_sn(), img_format=img_format)
 
     # Indexing Profiles
     if "indexing_profiles" in sec and profiles:
@@ -2341,6 +2361,8 @@ def main():
     ap.add_argument("--start-section", type=int, default=1, metavar="N",
                     help="First section number to use (default: 1, use higher when merging after existing sections)")
     ap.add_argument("--theme", help="Path to a YAML theme file")
+    ap.add_argument("--format", choices=["png", "svg"], default="png",
+                    help="Category image format (default: png)")
     args = ap.parse_args()
 
     theme = load_theme(args.theme) if args.theme else None
@@ -2354,6 +2376,7 @@ def main():
         data_dir      = getattr(args, "data_dir",      None),
         start_section = getattr(args, "start_section", 1),
         theme         = theme,
+        img_format    = args.format,
     )
     for w in warnings:
         print(f"⚠  {w}")

@@ -78,7 +78,8 @@ async def start_generate(
     wrapper_file:  UploadFile = File(None),
     theme_file:    UploadFile = File(None),
     sections:      str        = Form(""),
-    start_section: int        = Form(0),   # 0 = no numbers; >= 1 = number from N
+    start_section: int        = Form(0),
+    img_format:    str        = Form("png"),
 ):
     xml_bytes     = await xml_file.read()
     wrapper_bytes = await wrapper_file.read() if wrapper_file and wrapper_file.filename else None
@@ -99,7 +100,7 @@ async def start_generate(
     thread = threading.Thread(
         target=_run_job,
         args=(job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
-              sections_list, start_section, theme_bytes, theme_name),
+              sections_list, start_section, theme_bytes, theme_name, img_format),
         daemon=True,
     )
     thread.start()
@@ -179,7 +180,8 @@ async def validate_wrapper(wrapper_file: UploadFile = File(...)):
 # Job worker
 # ---------------------------------------------------------------------------
 def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
-             sections_list, start_section=1, theme_bytes=None, theme_name=None):
+             sections_list, start_section=1, theme_bytes=None, theme_name=None,
+             img_format="png"):
     tmpdir = tempfile.mkdtemp(prefix="therefore_web_")
     try:
         from build_doc import generate
@@ -211,6 +213,7 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
             start_section = start_section,
             log_fn        = job.log_queue.put,
             theme         = theme,
+            img_format    = img_format,
         )
         job.warnings = warnings
 
