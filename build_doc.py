@@ -2249,8 +2249,8 @@ def build_script_inventory(doc, profiles, root, section_no):
     )
 
     for e in entries:
-        blue_heading(doc, e["source"], level=3,
-                     meta=f"{e['context']}{f' ({e['lang']})' if e['lang'] else ''}")
+        meta = f"{e['context']} ({e['lang']})" if e['lang'] else e['context']
+        blue_heading(doc, e["source"], level=3, meta=meta)
         kv_table(doc, [
             ("Context", e["context"]),
             ("Language", e["lang"] or "—"),
