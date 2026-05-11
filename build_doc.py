@@ -867,7 +867,7 @@ def build_categories(doc, categories, render_dir, include_images, maps, section_
         "including visual renders and field definitions."
     )
     fp_map = maps["folder_paths"]
-    ext = ".svg" if img_format == "svg" else ".png"
+    # Word embedding always uses PNG (SVG fallbacks are generated when needed)
     for ctgry_no, name, folder_no, cat_elem in categories:
         meta = f"(Category No: {show_id(ctgry_no)})"
         blue_heading(doc, name, level=2, meta=meta)
@@ -886,7 +886,7 @@ def build_categories(doc, categories, render_dir, include_images, maps, section_
             dp.runs[0].italic = True
 
         if include_images and render_dir:
-            _embed_images(doc, name, cat_elem, render_dir, ext=ext)
+            _embed_images(doc, name, cat_elem, render_dir)
 
         build_fields_table(doc, category_fields(cat_elem, maps))
         doc.add_paragraph()
@@ -2400,20 +2400,43 @@ def _main_impl(args, warnings=None):
             _tmp_dir = render_dir
 
         if img_format == "svg":
+            # Generate SVGs as primary output, but also generate PNGs for Word embedding
             try:
-                from render_categories_svg import render_simple_category, render_tabbed_category
+                from render_categories_svg import render_simple_category as render_svg_simple
+                from render_categories_svg import render_tabbed_category as render_svg_tabbed
                 print(f"Rendering {len(categories)} categories to {render_dir} (SVG) ...")
                 for _no, name, _fno, cat_elem in categories:
                     if cat_has_tabs(cat_elem):
-                        render_tabbed_category(name, cat_elem, render_dir, theme=_theme)
+                        render_svg_tabbed(name, cat_elem, render_dir, theme=_theme)
                     else:
-                        render_simple_category(name, cat_elem, render_dir, theme=_theme)
+                        render_svg_simple(name, cat_elem, render_dir, theme=_theme)
                 print("SVG rendering complete.")
             except ImportError as e:
                 msg = f"SVG rendering unavailable ({e}) — continuing without images."
                 print(f"Warning: {msg}")
                 warnings.append(msg)
                 include_images = False
+
+            # Also generate PNGs for Word embedding
+            if include_images:
+                try:
+                    from render_categories import render_simple_category, render_tabbed_category
+                    from PIL import ImageFont
+                    try:
+                        pil_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
+                    except Exception:
+                        try:
+                            pil_font = ImageFont.truetype("arial.ttf", 11)
+                        except Exception:
+                            pil_font = ImageFont.load_default()
+                    print(f"Rendering PNG fallbacks for Word embedding ...")
+                    for _no, name, _fno, cat_elem in categories:
+                        if cat_has_tabs(cat_elem):
+                            render_tabbed_category(name, cat_elem, render_dir, pil_font)
+                        else:
+                            render_simple_category(name, cat_elem, render_dir, pil_font)
+                except ImportError:
+                    pass  # PNG fallback non-critical
         else:
             try:
                 from render_categories import render_simple_category, render_tabbed_category
@@ -2588,9 +2611,12 @@ def main():
     ap.add_argument("--theme", help="Path to a YAML theme file")
     ap.add_argument("--format", choices=["png", "svg"], default="png",
                     help="Category image format (default: png)")
+    ap.add_argument("--sections", default="",
+                    help="Comma-separated section keys to include (default: all)")
     args = ap.parse_args()
 
     theme = load_theme(args.theme) if args.theme else None
+    sections_list = [s.strip() for s in args.sections.split(",") if s.strip()] or None
 
     warnings = generate(
         args.xml, args.output,
@@ -2602,6 +2628,7 @@ def main():
         start_section = getattr(args, "start_section", 1),
         theme         = theme,
         img_format    = args.format,
+        sections      = sections_list,
     )
     for w in warnings:
         print(f"⚠  {w}")
