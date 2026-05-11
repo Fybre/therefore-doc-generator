@@ -2404,7 +2404,7 @@ def _main_impl(args, warnings=None):
             try:
                 from render_categories_svg import render_simple_category as render_svg_simple
                 from render_categories_svg import render_tabbed_category as render_svg_tabbed
-                print(f"Rendering {len(categories)} categories to {render_dir} (SVG) ...")
+                print(f"Rendering {len(categories)} categories ...")
                 for _no, name, _fno, cat_elem in categories:
                     if cat_has_tabs(cat_elem):
                         render_svg_tabbed(name, cat_elem, render_dir, theme=_theme)
@@ -2449,7 +2449,7 @@ def _main_impl(args, warnings=None):
                     except Exception:
                         pil_font = ImageFont.load_default()
 
-                print(f"Rendering {len(categories)} categories to {render_dir} ...")
+                print(f"Rendering {len(categories)} categories ...")
                 for _no, name, _fno, cat_elem in categories:
                     if cat_has_tabs(cat_elem):
                         render_tabbed_category(name, cat_elem, render_dir, pil_font)
