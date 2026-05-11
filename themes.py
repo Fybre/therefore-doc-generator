@@ -151,6 +151,36 @@ DEFAULT_THEME = Theme(
 
 
 # ---------------------------------------------------------------------------
+# Discovery
+# ---------------------------------------------------------------------------
+def list_themes(directory: str | os.PathLike = None) -> list[dict]:
+    """
+    Return a list of available themes as dicts:
+        [{"id": "default", "name": "Default Blue", "path": "/full/path"}, ...]
+    Scans the *directory* argument, or the `themes/` folder next to this file.
+    """
+    if directory is None:
+        directory = Path(__file__).parent / "themes"
+    p = Path(directory)
+    if not p.exists():
+        return []
+
+    themes = []
+    for f in sorted(p.glob("*.yaml")):
+        try:
+            import yaml
+            raw = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        # Derive a display name from the filename or an optional "name:" key
+        name = raw.get("name") if isinstance(raw.get("name"), str) else None
+        if not name:
+            name = f.stem.replace("_", " ").replace("-", " ").title()
+        themes.append({"id": f.stem, "name": name, "path": str(f)})
+    return themes
+
+
+# ---------------------------------------------------------------------------
 # Load / merge
 # ---------------------------------------------------------------------------
 def load_theme(path: str | os.PathLike | None = None) -> Theme:

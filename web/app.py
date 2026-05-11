@@ -24,11 +24,13 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
+
+from themes import list_themes, load_theme
 
 app = FastAPI(title="Therefore Documentation Generator")
 
@@ -72,11 +74,17 @@ async def index():
     return (STATIC_DIR / "index.html").read_text()
 
 
+@app.get("/themes")
+async def get_themes():
+    return {"themes": list_themes()}
+
+
 @app.post("/generate")
 async def start_generate(
     xml_file:      UploadFile = File(...),
     wrapper_file:  UploadFile = File(None),
     theme_file:    UploadFile = File(None),
+    theme_id:      str        = Form(""),
     sections:      str        = Form(""),
     start_section: int        = Form(0),
     img_format:    str        = Form("png"),
@@ -100,7 +108,7 @@ async def start_generate(
     thread = threading.Thread(
         target=_run_job,
         args=(job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
-              sections_list, start_section, theme_bytes, theme_name, img_format),
+              sections_list, start_section, theme_bytes, theme_name, img_format, theme_id),
         daemon=True,
     )
     thread.start()
@@ -181,12 +189,12 @@ async def validate_wrapper(wrapper_file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
              sections_list, start_section=1, theme_bytes=None, theme_name=None,
-             img_format="png"):
+             img_format="png", theme_id=""):
     tmpdir = tempfile.mkdtemp(prefix="therefore_web_")
     try:
         from build_doc import generate
         from merge_docs import merge as merge_docs
-        from themes import load_theme
+        from themes import load_theme, list_themes
 
         xml_path = os.path.join(tmpdir, xml_name)
         with open(xml_path, "wb") as f:
@@ -198,6 +206,11 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
             with open(theme_path, "wb") as f:
                 f.write(theme_bytes)
             theme = load_theme(theme_path)
+        elif theme_id:
+            for t in list_themes():
+                if t["id"] == theme_id:
+                    theme = load_theme(t["path"])
+                    break
 
         stem = os.path.splitext(xml_name)[0]
         doc_title = (stem.replace("TheConfiguration-", "")

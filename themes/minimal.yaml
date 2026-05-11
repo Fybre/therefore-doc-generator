@@ -1,0 +1,86 @@
+name: "Minimal Light"
+
+# Minimal Light Theme
+# Clean greys, generous whitespace, understated elegance.
+
+colors:
+  primary: "374151"
+  grey: "F9FAFB"
+  white: "FFFFFF"
+  black: "111827"
+  border: "D1D5DB"
+  accent: "059669"
+  danger: "DC2626"
+  warning: "D97706"
+  info: "2563EB"
+  muted: "6B7280"
+  light_muted: "9CA3AF"
+  code_bg: "F3F4F6"
+  code_border: "E5E7EB"
+  footer_border: "E5E7EB"
+  shading: "F3F4F6"
+  table_alt: "F9FAFB"
+  table_border: "E5E7EB"
+  h1_border: "374151"
+  para_border: "E5E7EB"
+  render_note: "9CA3AF"
+  description: "4B5563"
+  text_dark: "1F2937"
+  footer_text: "9CA3AF"
+
+fonts:
+  body: "Helvetica Neue"
+  mono: "Menlo"
+
+heading_sizes:
+  h1: 16
+  h2: 13
+  h3: 11
+  title: 24
+  subtitle: 14
+
+renderer:
+  bg: "FAFAFA"
+  white: "FFFFFF"
+  black: "111827"
+  border: "D1D5DB"
+  header: "F3F4F6"
+  tab_active: "FFFFFF"
+  tab_inactive: "F3F4F6"
+  chrome_bg: "F9FAFB"
+  chrome_border: "E5E7EB"
+  scroll_thumb: "E5E7EB"
+  scroll_arrow: "9CA3AF"
+  date_bg: "F9FAFB"
+  lookup_btn: "F9FAFB"
+  panel_header: "374151"
+  panel_header_text: "FFFFFF"
+  panel_bg: "FFFFFF"
+  panel_border: "E5E7EB"
+  input_bg: "FFFFFF"
+  input_border: "D1D5DB"
+  input_placeholder: "9CA3AF"
+  label: "374151"
+  button_primary: "374151"
+  button_secondary: "9CA3AF"
+  button_text: "FFFFFF"
+  checkbox_tick: "059669"
+  grid_header: "F3F4F6"
+  grid_border: "E5E7EB"
+  page_separator: "E5E7EB"
+  page_title_bg: "F9FAFB"
+  page_title_fg: "374151"
+  html_bg: "FEF3C7"
+  html_border: "FDE68A"
+  html_text: "92400E"
+  required: "DC2626"
+
+mermaid:
+  startNode:  {fill: "ECFDF5", stroke: "059669"}
+  endNode:    {fill: "FEF2F2", stroke: "DC2626"}
+  manualNode: {fill: "EFF6FF", stroke: "2563EB"}
+  autoNode:   {fill: "FFFBEB", stroke: "D97706"}
+  catNode:    {fill: "F9FAFB", stroke: "374151"}
+  kwNode:     {fill: "FAF5FF", stroke: "7C3AED"}
+  efNode:     {fill: "F0FDF4", stroke: "059669"}
+  dtNode:     {fill: "FFFBEB", stroke: "D97706"}

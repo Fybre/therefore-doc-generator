@@ -1,0 +1,86 @@
+name: "High Contrast"
+
+# High-Contrast Accessibility Theme
+# Maximised contrast for readability. Black/white with strong colour differentiation.
+
+colors:
+  primary: "000000"
+  grey: "E5E5E5"
+  white: "FFFFFF"
+  black: "000000"
+  border: "000000"
+  accent: "006600"
+  danger: "CC0000"
+  warning: "CC6600"
+  info: "0000CC"
+  muted: "333333"
+  light_muted: "555555"
+  code_bg: "FFFFFF"
+  code_border: "000000"
+  footer_border: "000000"
+  shading: "FFFFFF"
+  table_alt: "E5E5E5"
+  table_border: "000000"
+  h1_border: "000000"
+  para_border: "000000"
+  render_note: "333333"
+  description: "000000"
+  text_dark: "000000"
+  footer_text: "333333"
+
+fonts:
+  body: "Arial"
+  mono: "Courier New"
+
+heading_sizes:
+  h1: 18
+  h2: 14
+  h3: 12
+  title: 26
+  subtitle: 16
+
+renderer:
+  bg: "FFFFFF"
+  white: "FFFFFF"
+  black: "000000"
+  border: "000000"
+  header: "CCCCCC"
+  tab_active: "FFFFFF"
+  tab_inactive: "CCCCCC"
+  chrome_bg: "FFFFFF"
+  chrome_border: "000000"
+  scroll_thumb: "666666"
+  scroll_arrow: "000000"
+  date_bg: "FFFFFF"
+  lookup_btn: "FFFFFF"
+  panel_header: "000000"
+  panel_header_text: "FFFFFF"
+  panel_bg: "FFFFFF"
+  panel_border: "000000"
+  input_bg: "FFFFFF"
+  input_border: "000000"
+  input_placeholder: "555555"
+  label: "000000"
+  button_primary: "000000"
+  button_secondary: "555555"
+  button_text: "FFFFFF"
+  checkbox_tick: "000000"
+  grid_header: "CCCCCC"
+  grid_border: "000000"
+  page_separator: "000000"
+  page_title_bg: "FFFFFF"
+  page_title_fg: "000000"
+  html_bg: "FFFFCC"
+  html_border: "000000"
+  html_text: "000000"
+  required: "CC0000"
+
+mermaid:
+  startNode:  {fill: "CCFFCC", stroke: "006600"}
+  endNode:    {fill: "FFCCCC", stroke: "CC0000"}
+  manualNode: {fill: "CCCCFF", stroke: "0000CC"}
+  autoNode:   {fill: "FFFFCC", stroke: "CC6600"}
+  catNode:    {fill: "FFFFFF", stroke: "000000"}
+  kwNode:     {fill: "FFCCFF", stroke: "660066"}
+  efNode:     {fill: "CCFFFF", stroke: "006666"}
+  dtNode:     {fill: "FFFFCC", stroke: "666600"}

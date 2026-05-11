@@ -377,6 +377,32 @@
 
     <hr class="divider">
 
+    <!-- Theme selection -->
+    <div class="section-label">Theme</div>
+    <select id="themeSelect" style="width:100%;padding:10px 12px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.9rem;cursor:pointer">
+      <option value="">Loading themes…</option>
+    </select>
+    <div style="margin-top:8px">
+      <label class="sec-item" style="font-size:0.82rem">
+        <input type="checkbox" id="customThemeCheck" style="width:15px;height:15px;accent-color:var(--blue)">
+        Or upload a custom theme file (.yaml)
+      </label>
+      <div id="customThemeRow" style="display:none;margin-top:8px">
+        <div class="drop-zone" id="themeZone" style="padding:16px">
+          <input type="file" id="themeInput" accept=".yaml,.yml">
+          <span class="drop-icon">🎨</span>
+          <div class="drop-title">Drop theme YAML here</div>
+          <div class="drop-sub">or click to browse</div>
+          <div class="file-name hidden" id="themeFileName">
+            <span id="themeFileNameText"></span>
+            <button class="remove-btn" id="themeRemove" title="Remove">✕</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
     <!-- Section selection -->
     <div class="section-label">Sections to include</div>
     <div class="section-grid" id="sectionGrid">
@@ -390,6 +416,7 @@
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="queries"          checked> Queries</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="reports"          checked> Reports</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="stamps"           checked> Stamps</label>
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="script_inventory" checked> Script Inventory</label>
     </div>
     <div style="margin-top:8px">
       <button class="link-btn" id="selectAll">Select all</button>
@@ -536,6 +563,47 @@ function getSelectedSections() {
   return [...document.querySelectorAll('.sec-cb:checked')].map(cb => cb.value).join(',');
 }
 
+// ── Theme handling ──────────────────────────────────────────────────────────
+let themeFile = null;
+
+// Fetch built-in themes
+(async function loadThemes() {
+  try {
+    const resp = await fetch('/themes');
+    const data = await resp.json();
+    const sel = document.getElementById('themeSelect');
+    sel.innerHTML = '';
+    data.themes.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      sel.appendChild(opt);
+    });
+    if (data.themes.length === 0) {
+      sel.innerHTML = '<option value="">Default</option>';
+    }
+  } catch (_) {
+    document.getElementById('themeSelect').innerHTML = '<option value="">Default</option>';
+  }
+})();
+
+// Custom theme checkbox
+document.getElementById('customThemeCheck').addEventListener('change', function() {
+  document.getElementById('customThemeRow').style.display = this.checked ? 'block' : 'none';
+  if (!this.checked) {
+    themeFile = null;
+    document.getElementById('themeInput').value = '';
+    document.getElementById('themeFileName').classList.add('hidden');
+    document.getElementById('themeZone').classList.remove('has-file');
+  }
+});
+
+// Theme drop zone
+wireZone('themeZone', 'themeInput', 'themeFileName', 'themeFileNameText', 'themeRemove',
+  f => { themeFile = f; },
+  ()  => { themeFile = null; }
+);
+
 // ── Wrapper placeholder validation ──────────────────────────────────────────
 
 // ── Generate ────────────────────────────────────────────────────────────────
@@ -565,6 +633,14 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
     form.append('start_section', numbered ? (document.getElementById('startSection').value || '1') : '0');
   } else {
     form.append('start_section', '1');
+  }
+
+  // Theme
+  if (document.getElementById('customThemeCheck').checked && themeFile) {
+    form.append('theme_file', themeFile);
+  } else {
+    const themeId = document.getElementById('themeSelect').value;
+    if (themeId) form.append('theme_id', themeId);
   }
 
   try {
