@@ -2100,6 +2100,165 @@ def build_list_section(doc, items, section_no, title, id_field):
 
 
 # ---------------------------------------------------------------------------
+# Section: script inventory
+# ---------------------------------------------------------------------------
+def build_script_inventory(doc, profiles, root, section_no):
+    """Appendix collecting all custom scripts from profiles, eForms, and workflows."""
+
+    entries = []
+
+    # ── A. Indexing profiles ───────────────────────────────────────────────
+    for p in profiles:
+        lang = SCRIPT_LANG_LABELS.get(p["lang"], "") if p["lang"] else ""
+        source = f"Profile: {p['name']}"
+        if p["target_cat"]:
+            source += f" → {p['target_cat']}"
+
+        if p["init_script"]:
+            entries.append({
+                "source": source,
+                "context": "Init Script",
+                "lang": lang,
+                "code": p["init_script"],
+            })
+
+        for a in p.get("assignments", []):
+            if a["expr"]:
+                entries.append({
+                    "source": source,
+                    "context": f"Field: {a['field']} — Expression",
+                    "lang": lang,
+                    "code": a["expr"],
+                })
+            if a["check"]:
+                entries.append({
+                    "source": source,
+                    "context": f"Field: {a['field']} — Check Condition",
+                    "lang": lang,
+                    "code": a["check"],
+                })
+
+    # ── B. eForms ──────────────────────────────────────────────────────────
+    ef_parent = root.find("EForms")
+    for ef in (ef_parent if ef_parent is not None else []):
+        ef_name = ef.findtext("FName") or "EForm"
+        fdef_text = ef.findtext("FDef")
+        if not fdef_text:
+            continue
+        try:
+            fdef = json.loads(fdef_text)
+        except Exception:
+            continue
+
+        def _walk_ef(components, page="", datagrid=""):
+            for c in components:
+                t = c.get("type", "")
+                label = c.get("label", "") or c.get("title", "")
+                key = c.get("key", "")
+                ctx = f"{ef_name}"
+                if page:
+                    ctx += f" / {page}"
+                if datagrid:
+                    ctx += f" / {datagrid}"
+                ctx += f" — {label or key}"
+
+                if t == "panel":
+                    _walk_ef(c.get("components") or [], page=label or page, datagrid=datagrid)
+                    continue
+                elif t == "columns":
+                    for col in (c.get("columns") or []):
+                        _walk_ef(col.get("components") or [], page=page, datagrid=datagrid)
+                    continue
+                elif t == "datagrid":
+                    _walk_ef(c.get("components") or [], page=page, datagrid=label)
+                    continue
+
+                cc = (c.get("customConditional") or "").strip()
+                if cc:
+                    entries.append({"source": ctx, "context": "Custom Conditional", "lang": "JavaScript", "code": cc})
+
+                calc = (c.get("calculateValue") or "").strip()
+                if calc:
+                    entries.append({"source": ctx, "context": "Calculated Value", "lang": "JavaScript", "code": calc})
+
+                val = c.get("validate") or {}
+                vcustom = (val.get("custom") or "").strip()
+                if vcustom:
+                    entries.append({"source": ctx, "context": "Custom Validation", "lang": "JavaScript", "code": vcustom})
+
+                for l in (c.get("logic") or []):
+                    tr = l.get("trigger") or {}
+                    tr_type = tr.get("type", "")
+                    tr_desc = tr.get("event", "") if tr_type == "event" else ""
+                    actions = []
+                    for a in (l.get("actions") or []):
+                        atype = a.get("type", "")
+                        prop = (a.get("property") or {}).get("value", "")
+                        val = str(a.get("value", "") or a.get("customAction", "")).strip()
+                        if prop:
+                            actions.append(f"set {prop} = {val}")
+                        else:
+                            actions.append(f"{atype}: {val}")
+                    if actions:
+                        code = f"Trigger: {tr_desc or tr_type}\n" + "\n".join(actions)
+                        entries.append({"source": ctx, "context": "Logic", "lang": "JavaScript", "code": code})
+
+        _walk_ef(fdef.get("components") or [])
+
+    # ── C. Workflows ───────────────────────────────────────────────────────
+    wf_parent = root.find("WFProcesses") or root.find("Workflows")
+    if wf_parent is not None:
+        for wf in (wf_parent.findall("WFProcess") or wf_parent.findall("Workflow")):
+            wf_name = get_name(wf) or "Workflow"
+            tasks_el = wf.find("Tasks")
+            if tasks_el is None:
+                continue
+            for task in tasks_el.findall("T") or tasks_el.findall("Task"):
+                tname = get_name(task) or f"Task {get_text(task, 'TaskNo')}"
+                # Task-level script (often found in automatic tasks)
+                script = (task.findtext("Script") or "").strip()
+                if script:
+                    entries.append({
+                        "source": f"{wf_name} / {tname}",
+                        "context": "Task Script",
+                        "lang": "",
+                        "code": script,
+                    })
+                # Transition conditions
+                trans_el = task.find("Transitions")
+                if trans_el is not None:
+                    for tr in trans_el.findall("TR"):
+                        cond = (get_text(tr, "Condition") or "").strip()
+                        if cond and len(cond) > 3 and not cond.replace(" ", "").isdigit():
+                            entries.append({
+                                "source": f"{wf_name} / {tname}",
+                                "context": "Transition Condition",
+                                "lang": "",
+                                "code": cond,
+                            })
+
+    if not entries:
+        return
+
+    doc.add_page_break()
+    _manual_heading(doc, sec_heading(section_no, "Script Inventory"), 15, 16, 5,
+                    bottom_border=True)
+    doc.add_paragraph(
+        f"{len(entries)} custom script(s), calculated fields, and conditions "
+        "found across indexing profiles, eForms, and workflows."
+    )
+
+    for e in entries:
+        blue_heading(doc, e["source"], level=3,
+                     meta=f"{e['context']}{f' ({e['lang']})' if e['lang'] else ''}")
+        kv_table(doc, [
+            ("Context", e["context"]),
+            ("Language", e["lang"] or "—"),
+        ], lw=3.5, vw=13.0)
+        add_code_block(doc, e["code"])
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 ALL_SECTIONS = [
@@ -2113,6 +2272,7 @@ ALL_SECTIONS = [
     "queries",
     "reports",
     "stamps",
+    "script_inventory",
 ]
 
 
@@ -2397,6 +2557,10 @@ def _main_impl(args, warnings=None):
 
     if "reports" in sec and reports:
         build_reports_section(doc, reports, _next_sn())
+
+    # Script Inventory
+    if "script_inventory" in sec:
+        build_script_inventory(doc, profiles, root, _next_sn())
 
     doc.save(args.output)
     size_kb = Path(args.output).stat().st_size // 1024
