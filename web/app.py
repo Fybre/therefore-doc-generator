@@ -13,6 +13,17 @@ import asyncio
 import json
 import os
 import queue
+
+# Load .env if present (for local dev outside Docker)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+_AI_API_URL = os.environ.get("AI_API_URL", "http://localhost:1234/v1")
+_AI_API_KEY = os.environ.get("AI_API_KEY", "lm-studio")
+_AI_MODEL   = os.environ.get("AI_MODEL", "")
 import shutil
 import sys
 import tempfile
@@ -114,9 +125,7 @@ async def start_generate(
     api_tenant:    str        = Form(""),
     api_username:  str        = Form(""),
     api_password:  str        = Form(""),
-    ai_url:        str        = Form(""),
     ai_model:      str        = Form(""),
-    ai_key:        str        = Form("lm-studio"),
 ):
     xml_bytes     = await xml_file.read()
     wrapper_bytes = await wrapper_file.read() if wrapper_file and wrapper_file.filename else None
@@ -139,7 +148,7 @@ async def start_generate(
         args=(job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
               sections_list, start_section, theme_bytes, theme_name, img_format, theme_id, template_id,
               api_url.strip(), api_tenant.strip(), api_username.strip(), api_password,
-              ai_url.strip(), ai_model.strip(), ai_key.strip() or "lm-studio"),
+              ai_model.strip() or _AI_MODEL),
         daemon=True,
     )
     thread.start()
@@ -247,7 +256,7 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
              sections_list, start_section=1, theme_bytes=None, theme_name=None,
              img_format="png", theme_id="", template_id="",
              api_url="", api_tenant="", api_username="", api_password="",
-             ai_url="", ai_model="", ai_key="lm-studio"):
+             ai_model=""):
     tmpdir = tempfile.mkdtemp(prefix="therefore_web_")
     try:
         from build_doc import generate
@@ -309,9 +318,9 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
             theme         = theme,
             img_format    = img_format,
             server_info   = server_info,
-            ai_url        = ai_url or None,
+            ai_url        = _AI_API_URL or None,
             ai_model      = ai_model or None,
-            ai_key        = ai_key or "lm-studio",
+            ai_key        = _AI_API_KEY,
         )
         job.warnings = warnings
 

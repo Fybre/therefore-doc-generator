@@ -459,22 +459,11 @@
       <div class="instr-body" id="aiBody" style="display:none">
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
           <div>
-            <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">API URL</label>
-            <input type="text" id="aiUrl" value="http://localhost:1234/v1" placeholder="http://localhost:1234/v1"
+            <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Model <span style="color:var(--muted)">(as shown in LM Studio — leave blank to use server default)</span></label>
+            <input type="text" id="aiModel" placeholder="e.g. mistral-nemo-instruct-2407"
               style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
           </div>
-          <div style="display:flex;gap:10px">
-            <div style="flex:2">
-              <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Model</label>
-              <input type="text" id="aiModel" placeholder="e.g. mistral-nemo-instruct-2407"
-                style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
-            </div>
-            <div style="flex:1">
-              <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">API Key</label>
-              <input type="text" id="aiKey" value="lm-studio" placeholder="lm-studio"
-                style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
-            </div>
-          </div>
+          <p style="font-size:0.78rem;color:var(--muted);margin:0">API URL and key are configured in <code>.env</code> on the server.</p>
         </div>
       </div>
     </div>
@@ -859,9 +848,7 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
   form.append('api_password', document.getElementById('apiPassword').value);
 
   // AI summary (optional)
-  form.append('ai_url',   document.getElementById('aiUrl').value.trim());
   form.append('ai_model', document.getElementById('aiModel').value.trim());
-  form.append('ai_key',   document.getElementById('aiKey').value.trim());
 
   try {
     // Step 1 — start the job

@@ -4,5 +4,8 @@ services:
     ports:
       - "8000:8000"
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     # Chromium needs this in some environments
     shm_size: '256mb'

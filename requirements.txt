@@ -7,3 +7,4 @@ uvicorn[standard]>=0.27.0
 python-multipart>=0.0.9
 docxcompose>=1.4.0
 openai>=1.0.0
+python-dotenv>=1.0.0
