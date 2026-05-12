@@ -454,16 +454,13 @@
     <!-- AI Summary -->
     <div class="wrapper-instructions">
       <button class="instr-toggle" id="aiToggle">
-        <i class="chevron">›</i> AI Summary <span style="color:var(--muted);font-weight:400;font-size:0.82rem">(optional — LM Studio or any OpenAI-compatible API)</span>
+        <i class="chevron">›</i> AI Summary
+        <span id="aiHeaderDot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;margin-left:6px;vertical-align:middle"></span>
       </button>
       <div class="instr-body" id="aiBody" style="display:none">
-        <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
-          <div>
-            <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Model <span style="color:var(--muted)">(as shown in LM Studio — leave blank to use server default)</span></label>
-            <input type="text" id="aiModel" placeholder="e.g. mistral-nemo-instruct-2407"
-              style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
-          </div>
-          <p style="font-size:0.78rem;color:var(--muted);margin:0">API URL and key are configured in <code>.env</code> on the server.</p>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+          <span id="aiStatusDot" style="width:10px;height:10px;border-radius:50%;background:var(--muted);flex-shrink:0;display:inline-block"></span>
+          <span id="aiStatusText" style="font-size:0.85rem;color:var(--muted)">Checking…</span>
         </div>
       </div>
     </div>
@@ -599,13 +596,45 @@ document.getElementById('serverToggle').addEventListener('click', () => {
   document.getElementById('serverToggle').classList.toggle('open', open);
 });
 
-// AI Summary panel toggle
+// AI Summary panel toggle + status check
+let aiStatusChecked = false;
+
+async function checkAiStatus() {
+  const dot     = document.getElementById('aiStatusDot');
+  const hdrDot  = document.getElementById('aiHeaderDot');
+  const text    = document.getElementById('aiStatusText');
+  dot.style.background = hdrDot.style.background = 'var(--muted)';
+  text.style.color     = 'var(--muted)';
+  text.textContent     = 'Checking…';
+  try {
+    const resp = await fetch('/ai-status');
+    const data = await resp.json();
+    if (data.active) {
+      dot.style.background = hdrDot.style.background = '#38a169';
+      text.style.color     = 'var(--text)';
+      text.textContent     = `Active — ${data.model}`;
+    } else {
+      dot.style.background = hdrDot.style.background = '#E53E3E';
+      text.style.color     = '#E53E3E';
+      text.textContent     = `Unavailable — ${data.error || 'cannot connect'}`;
+    }
+  } catch(e) {
+    dot.style.background = hdrDot.style.background = '#E53E3E';
+    text.style.color     = '#E53E3E';
+    text.textContent     = 'Unavailable — ' + e.message;
+  }
+}
+
 document.getElementById('aiToggle').addEventListener('click', () => {
   const body = document.getElementById('aiBody');
   const open = body.style.display === 'none';
   body.style.display = open ? 'block' : 'none';
   document.getElementById('aiToggle').classList.toggle('open', open);
+  if (open && !aiStatusChecked) { aiStatusChecked = true; checkAiStatus(); }
 });
+
+// Also check on page load (quietly updates dot without opening panel)
+checkAiStatus();
 
 // Auto-detect tenant from thereforeonline.com URLs
 document.getElementById('apiUrl').addEventListener('input', function() {
@@ -847,8 +876,7 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
   form.append('api_username', document.getElementById('apiUsername').value.trim());
   form.append('api_password', document.getElementById('apiPassword').value);
 
-  // AI summary (optional)
-  form.append('ai_model', document.getElementById('aiModel').value.trim());
+  // AI summary enabled via sections checkbox — no additional form fields needed
 
   try {
     // Step 1 — start the job

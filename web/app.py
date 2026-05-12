@@ -106,6 +106,21 @@ async def get_themes():
     return {"themes": list_themes()}
 
 
+@app.get("/ai-status")
+async def ai_status():
+    if not _AI_API_URL:
+        return {"active": False, "model": "", "error": "AI_API_URL not configured"}
+    try:
+        from openai import OpenAI
+        client = OpenAI(base_url=_AI_API_URL, api_key=_AI_API_KEY or "lm-studio")
+        models = client.models.list()
+        available = [m.id for m in models.data]
+        model = _AI_MODEL or (available[0] if available else "")
+        return {"active": True, "model": model, "available": available}
+    except Exception as exc:
+        return {"active": False, "model": _AI_MODEL, "error": str(exc)}
+
+
 @app.get("/templates")
 async def get_templates():
     return {"templates": list_templates()}
@@ -125,7 +140,6 @@ async def start_generate(
     api_tenant:    str        = Form(""),
     api_username:  str        = Form(""),
     api_password:  str        = Form(""),
-    ai_model:      str        = Form(""),
 ):
     xml_bytes     = await xml_file.read()
     wrapper_bytes = await wrapper_file.read() if wrapper_file and wrapper_file.filename else None
@@ -147,8 +161,7 @@ async def start_generate(
         target=_run_job,
         args=(job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
               sections_list, start_section, theme_bytes, theme_name, img_format, theme_id, template_id,
-              api_url.strip(), api_tenant.strip(), api_username.strip(), api_password,
-              ai_model.strip() or _AI_MODEL),
+              api_url.strip(), api_tenant.strip(), api_username.strip(), api_password),
         daemon=True,
     )
     thread.start()
@@ -255,8 +268,7 @@ async def validate_wrapper(wrapper_file: UploadFile = File(...)):
 def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
              sections_list, start_section=1, theme_bytes=None, theme_name=None,
              img_format="png", theme_id="", template_id="",
-             api_url="", api_tenant="", api_username="", api_password="",
-             ai_model=""):
+             api_url="", api_tenant="", api_username="", api_password=""):
     tmpdir = tempfile.mkdtemp(prefix="therefore_web_")
     try:
         from build_doc import generate
@@ -319,7 +331,7 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
             img_format    = img_format,
             server_info   = server_info,
             ai_url        = _AI_API_URL or None,
-            ai_model      = ai_model or None,
+            ai_model      = _AI_MODEL or None,
             ai_key        = _AI_API_KEY,
         )
         job.warnings = warnings
