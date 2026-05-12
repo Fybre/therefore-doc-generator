@@ -2427,7 +2427,18 @@ def build_server_info_section(doc, server_info, xml_root, categories, section_no
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+def build_ai_summary_section(doc, summary_text: str, section_no):
+    doc.add_page_break()
+    _manual_heading(doc, sec_heading(section_no, "System Summary"),
+                    15, 16, 5, bottom_border=True)
+    for para in summary_text.split("\n"):
+        para = para.strip()
+        if para:
+            doc.add_paragraph(para)
+
+
 ALL_SECTIONS = [
+    "ai_summary",
     "server_info",
     "categories",
     "indexing_profiles",
@@ -2458,6 +2469,9 @@ def generate(
     theme: Theme = None,
     img_format: str = "png",
     server_info: dict = None,
+    ai_url: str = None,
+    ai_model: str = None,
+    ai_key: str = "lm-studio",
 ) -> list:
     """
     Generate a Therefore documentation Word document from an XML export.
@@ -2490,6 +2504,9 @@ def generate(
         start_section    = start_section,
         img_format       = img_format,
         server_info      = server_info,
+        ai_url           = ai_url,
+        ai_model         = ai_model,
+        ai_key           = ai_key,
     )
 
     warnings = []
@@ -2687,6 +2704,27 @@ def _main_impl(args, warnings=None):
         sn += 1
         return sn
 
+    # AI Summary (generated before overview so section number comes first)
+    _ai_summary_text = None
+    if "ai_summary" in sec and getattr(args, "ai_url", None):
+        try:
+            from ai_summary import generate_ai_summary
+            _eforms_list = [
+                {"name": (get_name(ef) or ef.findtext("FName") or "")}
+                for ef in (root.find("EForms") or [])
+            ]
+            _ai_summary_text = generate_ai_summary(
+                categories, workflows, profiles, _eforms_list, maps,
+                server_info    = getattr(args, "server_info", None),
+                ai_url         = args.ai_url,
+                ai_model       = getattr(args, "ai_model", None),
+                api_key        = getattr(args, "ai_key", "lm-studio"),
+                log_fn         = log_fn if log_fn else print,
+            )
+        except Exception as exc:
+            warnings.append(f"AI summary failed: {exc}")
+            print(f"AI summary failed: {exc}")
+
     # Overview
     build_overview(doc, [
         ("Categories",         len(categories)),
@@ -2700,6 +2738,10 @@ def _main_impl(args, warnings=None):
         ("Stamps",              len(stamps)),
     ], section_no=_next_sn())
     doc.add_page_break()
+
+    # AI Summary section
+    if "ai_summary" in sec and _ai_summary_text:
+        build_ai_summary_section(doc, _ai_summary_text, _next_sn())
 
     # Server Configuration
     if "server_info" in sec:

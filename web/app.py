@@ -114,6 +114,9 @@ async def start_generate(
     api_tenant:    str        = Form(""),
     api_username:  str        = Form(""),
     api_password:  str        = Form(""),
+    ai_url:        str        = Form(""),
+    ai_model:      str        = Form(""),
+    ai_key:        str        = Form("lm-studio"),
 ):
     xml_bytes     = await xml_file.read()
     wrapper_bytes = await wrapper_file.read() if wrapper_file and wrapper_file.filename else None
@@ -135,7 +138,8 @@ async def start_generate(
         target=_run_job,
         args=(job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
               sections_list, start_section, theme_bytes, theme_name, img_format, theme_id, template_id,
-              api_url.strip(), api_tenant.strip(), api_username.strip(), api_password),
+              api_url.strip(), api_tenant.strip(), api_username.strip(), api_password,
+              ai_url.strip(), ai_model.strip(), ai_key.strip() or "lm-studio"),
         daemon=True,
     )
     thread.start()
@@ -242,7 +246,8 @@ async def validate_wrapper(wrapper_file: UploadFile = File(...)):
 def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
              sections_list, start_section=1, theme_bytes=None, theme_name=None,
              img_format="png", theme_id="", template_id="",
-             api_url="", api_tenant="", api_username="", api_password=""):
+             api_url="", api_tenant="", api_username="", api_password="",
+             ai_url="", ai_model="", ai_key="lm-studio"):
     tmpdir = tempfile.mkdtemp(prefix="therefore_web_")
     try:
         from build_doc import generate
@@ -304,6 +309,9 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
             theme         = theme,
             img_format    = img_format,
             server_info   = server_info,
+            ai_url        = ai_url or None,
+            ai_model      = ai_model or None,
+            ai_key        = ai_key or "lm-studio",
         )
         job.warnings = warnings
 

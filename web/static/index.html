@@ -451,11 +451,40 @@
       </div>
     </div>
 
+    <!-- AI Summary -->
+    <div class="wrapper-instructions">
+      <button class="instr-toggle" id="aiToggle">
+        <i class="chevron">›</i> AI Summary <span style="color:var(--muted);font-weight:400;font-size:0.82rem">(optional — LM Studio or any OpenAI-compatible API)</span>
+      </button>
+      <div class="instr-body" id="aiBody" style="display:none">
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+          <div>
+            <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">API URL</label>
+            <input type="text" id="aiUrl" value="http://localhost:1234/v1" placeholder="http://localhost:1234/v1"
+              style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
+          </div>
+          <div style="display:flex;gap:10px">
+            <div style="flex:2">
+              <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Model</label>
+              <input type="text" id="aiModel" placeholder="e.g. mistral-nemo-instruct-2407"
+                style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">API Key</label>
+              <input type="text" id="aiKey" value="lm-studio" placeholder="lm-studio"
+                style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <hr class="divider">
 
     <!-- Section selection -->
     <div class="section-label">Sections to include</div>
     <div class="section-grid" id="sectionGrid">
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="ai_summary"        checked> AI Summary</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="server_info"      checked> Server Configuration</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="categories"       checked> Categories</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="indexing_profiles" checked> Indexing Profiles</label>
@@ -579,6 +608,14 @@ document.getElementById('serverToggle').addEventListener('click', () => {
   const open = body.style.display === 'none';
   body.style.display = open ? 'block' : 'none';
   document.getElementById('serverToggle').classList.toggle('open', open);
+});
+
+// AI Summary panel toggle
+document.getElementById('aiToggle').addEventListener('click', () => {
+  const body = document.getElementById('aiBody');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  document.getElementById('aiToggle').classList.toggle('open', open);
 });
 
 // Auto-detect tenant from thereforeonline.com URLs
@@ -820,6 +857,11 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
   form.append('api_tenant',   document.getElementById('apiTenant').value.trim());
   form.append('api_username', document.getElementById('apiUsername').value.trim());
   form.append('api_password', document.getElementById('apiPassword').value);
+
+  // AI summary (optional)
+  form.append('ai_url',   document.getElementById('aiUrl').value.trim());
+  form.append('ai_model', document.getElementById('aiModel').value.trim());
+  form.append('ai_key',   document.getElementById('aiKey').value.trim());
 
   try {
     // Step 1 — start the job
