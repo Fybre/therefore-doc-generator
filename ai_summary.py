@@ -8,12 +8,13 @@ from __future__ import annotations
 
 def _build_prompt(categories, workflows, profiles, eforms, maps, server_info=None) -> str:
     lines = [
-        "You are a technical writer producing a Therefore document management system "
-        "design document. Based on the configuration data below, write a 3-5 paragraph "
-        "executive summary in clear professional prose. Describe what the system does, "
-        "its main document categories, key workflow automation, eForm usage, and any "
-        "notable integrations or configuration details. Do not use bullet points or "
-        "headings — flowing paragraphs only.",
+        "You are writing a technical design document for a Therefore document management "
+        "system implementation. Based only on the configuration data below, write a "
+        "factual 3-5 paragraph description of this specific system. Be concrete and "
+        "specific — name the actual categories, workflows, and integrations present. "
+        "Do not use marketing language, do not say things like 'streamline', 'robust', "
+        "'leverage', 'comprehensive', or 'enhance'. Do not invent features not present "
+        "in the data. Write in plain technical prose, no bullet points or headings.",
         "",
         "SYSTEM CONFIGURATION",
         "====================",
