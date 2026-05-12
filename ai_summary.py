@@ -63,9 +63,10 @@ def _build_prompt(categories, workflows, profiles, eforms, maps, server_info=Non
             lines.append(f"  ... and {len(ef_list) - 15} more")
 
     # Keyword dictionaries
-    kw = maps.get("kw_dicts", {})
+    kw = maps.get("kw_dicts", [])
     if kw:
-        lines.append(f"\nKeyword Dictionaries ({len(kw)}): {', '.join(list(kw.keys())[:10])}")
+        names = [d["name"] for d in kw if d.get("name")]
+        lines.append(f"\nKeyword Dictionaries ({len(kw)}): {', '.join(names[:10])}")
 
     # Retention policies
     # (passed via server_info or maps — skip if not present)
