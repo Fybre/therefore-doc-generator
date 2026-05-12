@@ -861,6 +861,7 @@ def build_fields_table(doc, rows):
 
 
 def build_categories(doc, categories, render_dir, include_images, maps, section_no=2, img_format="png"):
+    doc.add_page_break()
     _manual_heading(doc, sec_heading(section_no, "Categories"), 15, 16, 5, bottom_border=True)
     doc.add_paragraph(
         "This section documents all category index forms, "
@@ -2434,7 +2435,6 @@ def build_ai_summary_section(doc, summary_text: str, section_no):
         para = para.strip()
         if para:
             doc.add_paragraph(para)
-    doc.add_page_break()
 
 
 ALL_SECTIONS = [
