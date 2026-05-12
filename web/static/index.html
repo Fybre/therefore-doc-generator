@@ -458,9 +458,15 @@
         <span id="aiHeaderDot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);display:inline-block;margin-left:6px;vertical-align:middle"></span>
       </button>
       <div class="instr-body" id="aiBody" style="display:none">
-        <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
-          <span id="aiStatusDot" style="width:10px;height:10px;border-radius:50%;background:var(--muted);flex-shrink:0;display:inline-block"></span>
-          <span id="aiStatusText" style="font-size:0.85rem;color:var(--muted)">Checking…</span>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px">
+          <label class="sec-item" style="font-size:0.88rem">
+            <input type="checkbox" id="aiEnabled" style="width:15px;height:15px;accent-color:var(--blue)">
+            Include AI Summary in document
+          </label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span id="aiStatusDot" style="width:10px;height:10px;border-radius:50%;background:var(--muted);flex-shrink:0;display:inline-block"></span>
+            <span id="aiStatusText" style="font-size:0.82rem;color:var(--muted)">Checking…</span>
+          </div>
         </div>
       </div>
     </div>
@@ -470,7 +476,6 @@
     <!-- Section selection -->
     <div class="section-label">Sections to include</div>
     <div class="section-grid" id="sectionGrid">
-      <label class="sec-item"><input type="checkbox" class="sec-cb" value="ai_summary"        checked> AI Summary</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="server_info"      checked> Server Configuration</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="categories"       checked> Categories</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="indexing_profiles" checked> Indexing Profiles</label>
@@ -733,7 +738,9 @@ document.getElementById('selectNone').addEventListener('click', () => {
 });
 
 function getSelectedSections() {
-  return [...document.querySelectorAll('.sec-cb:checked')].map(cb => cb.value).join(',');
+  const sections = [...document.querySelectorAll('.sec-cb:checked')].map(cb => cb.value);
+  if (document.getElementById('aiEnabled')?.checked) sections.unshift('ai_summary');
+  return sections.join(',');
 }
 
 // ── Template handling ───────────────────────────────────────────────────────
