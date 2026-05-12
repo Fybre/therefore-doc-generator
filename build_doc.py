@@ -2251,6 +2251,19 @@ def build_script_inventory(doc, profiles, root, section_no, maps=None,
     )
 
     fno_map = (maps or {}).get("field_no_map", {})
+
+    # Pre-count scripts that will need AI summaries so we can show N of M progress
+    if ai_url:
+        _ai_candidates = [
+            e for e in entries
+            if len([l for l in resolve_field_refs(e["code"], fno_map).split("\n") if l.strip()]) > 4
+        ]
+        if _ai_candidates:
+            print(f"Generating AI summaries for {len(_ai_candidates)} script(s) ...")
+    else:
+        _ai_candidates = []
+    _ai_done = 0
+
     for e in entries:
         meta = f"{e['context']} ({e['lang']})" if e['lang'] else e['context']
         blue_heading(doc, e["source"], level=3, meta=meta)
@@ -2264,6 +2277,8 @@ def build_script_inventory(doc, profiles, root, section_no, maps=None,
         ]
 
         if ai_url and len(non_empty_lines) > 4:
+            _ai_done += 1
+            print(f"  AI summary {_ai_done}/{len(_ai_candidates)}: {e['source'][:60]}")
             try:
                 from ai_summary import summarize_script
                 summary = summarize_script(
@@ -2275,7 +2290,7 @@ def build_script_inventory(doc, profiles, root, section_no, maps=None,
                 )
                 rows.append(("Summary", summary))
             except Exception as exc:
-                print(f"Script summary failed: {exc}")
+                print(f"  Script summary failed: {exc}")
 
         kv_table(doc, rows, lw=3.5, vw=13.0)
         add_code_block(doc, resolved_code)
