@@ -105,7 +105,10 @@ def fetch_server_info(api_url: str, tenant: str, username: str, password: str) -
     if tenant:
         anon_headers["TenantName"] = tenant
 
-    info: dict = {}
+    info: dict = {
+        "api_url":    api_url.rstrip("/"),
+        "api_tenant": tenant,
+    }
 
     # Service version — no auth needed
     try:

@@ -2103,7 +2103,8 @@ def build_list_section(doc, items, section_no, title, id_field):
 # ---------------------------------------------------------------------------
 # Section: script inventory
 # ---------------------------------------------------------------------------
-def build_script_inventory(doc, profiles, root, section_no, maps=None):
+def build_script_inventory(doc, profiles, root, section_no, maps=None,
+                           ai_url=None, ai_model=None, ai_key="lm-studio"):
     """Appendix collecting all custom scripts from profiles, eForms, and workflows."""
 
     entries = []
@@ -2253,11 +2254,31 @@ def build_script_inventory(doc, profiles, root, section_no, maps=None):
     for e in entries:
         meta = f"{e['context']} ({e['lang']})" if e['lang'] else e['context']
         blue_heading(doc, e["source"], level=3, meta=meta)
-        kv_table(doc, [
-            ("Context", e["context"]),
+
+        resolved_code = resolve_field_refs(e["code"], fno_map)
+        non_empty_lines = [l for l in resolved_code.split("\n") if l.strip()]
+
+        rows = [
+            ("Context",  e["context"]),
             ("Language", e["lang"] or "—"),
-        ], lw=3.5, vw=13.0)
-        add_code_block(doc, resolve_field_refs(e["code"], fno_map))
+        ]
+
+        if ai_url and len(non_empty_lines) > 4:
+            try:
+                from ai_summary import summarize_script
+                summary = summarize_script(
+                    resolved_code,
+                    context=f"{e['source']} — {e['context']}",
+                    ai_url=ai_url,
+                    ai_model=ai_model,
+                    api_key=ai_key,
+                )
+                rows.append(("Summary", summary))
+            except Exception as exc:
+                print(f"Script summary failed: {exc}")
+
+        kv_table(doc, rows, lw=3.5, vw=13.0)
+        add_code_block(doc, resolved_code)
 
 
 # ---------------------------------------------------------------------------
@@ -2307,10 +2328,13 @@ def build_server_info_section(doc, server_info, xml_root, categories, section_no
         # --- System ---
         _sub_heading(doc, "System")
         sys_rows = []
-        if si.get("server_name"):        sys_rows.append(("Server Name",      si["server_name"]))
+        if si.get("api_url"):            sys_rows.append(("API URL",           si["api_url"]))
+        if si.get("api_tenant"):         sys_rows.append(("Tenant",            si["api_tenant"]))
+        if si.get("server_name"):        sys_rows.append(("Server Name",       si["server_name"]))
         if si.get("service_version"):    sys_rows.append(("Service Version",   si["service_version"]))
         if si.get("customer_id"):        sys_rows.append(("Customer ID",       si["customer_id"]))
-        if si.get("tenant_name"):        sys_rows.append(("Tenant",            si["tenant_name"]))
+        if si.get("tenant_name") and si.get("tenant_name") != si.get("api_tenant"):
+            sys_rows.append(("Tenant Name",       si["tenant_name"]))
         if si.get("region"):             sys_rows.append(("Region",            si["region"]))
         if si.get("locale"):             sys_rows.append(("Locale",            si["locale"]))
         if si.get("admin_email"):        sys_rows.append(("Admin Email",       si["admin_email"]))
@@ -2799,7 +2823,10 @@ def _main_impl(args, warnings=None):
 
     # Script Inventory
     if "script_inventory" in sec:
-        build_script_inventory(doc, profiles, root, _next_sn(), maps=maps)
+        build_script_inventory(doc, profiles, root, _next_sn(), maps=maps,
+                               ai_url=getattr(args, "ai_url", None),
+                               ai_model=getattr(args, "ai_model", None),
+                               ai_key=getattr(args, "ai_key", "lm-studio"))
 
     doc.save(args.output)
     size_kb = Path(args.output).stat().st_size // 1024

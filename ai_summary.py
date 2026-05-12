@@ -76,6 +76,39 @@ def _build_prompt(categories, workflows, profiles, eforms, maps, server_info=Non
     return "\n".join(lines)
 
 
+def summarize_script(
+    code: str,
+    context: str = "",
+    ai_url: str = "http://localhost:1234/v1",
+    ai_model: str = None,
+    api_key: str = "lm-studio",
+) -> str:
+    """
+    Return a one-sentence plain-English description of what a script does.
+    Raises on connection failure.
+    """
+    try:
+        from openai import OpenAI
+    except ImportError:
+        raise RuntimeError("openai package not installed")
+
+    client = OpenAI(base_url=ai_url, api_key=api_key or "lm-studio")
+    prompt = (
+        f"Describe in one concise sentence what the following Therefore script does. "
+        f"Be specific about field names, conditions, or actions involved. "
+        f"Do not use marketing language.\n"
+        + (f"Context: {context}\n" if context else "")
+        + f"\n{code}"
+    )
+    response = client.chat.completions.create(
+        model=ai_model or "local-model",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_tokens=120,
+    )
+    return response.choices[0].message.content.strip()
+
+
 def generate_ai_summary(
     categories,
     workflows,
