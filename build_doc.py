@@ -2428,13 +2428,13 @@ def build_server_info_section(doc, server_info, xml_root, categories, section_no
 # Public API
 # ---------------------------------------------------------------------------
 def build_ai_summary_section(doc, summary_text: str, section_no):
-    doc.add_page_break()
     _manual_heading(doc, sec_heading(section_no, "System Summary"),
                     15, 16, 5, bottom_border=True)
     for para in summary_text.split("\n"):
         para = para.strip()
         if para:
             doc.add_paragraph(para)
+    doc.add_page_break()
 
 
 ALL_SECTIONS = [
