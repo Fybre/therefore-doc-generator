@@ -1008,7 +1008,7 @@ def build_workflows(doc, root, section_no, maps, render_dir=None, font=None):
         # Embed workflow diagram if renderer is available
         if _WORKFLOW_RENDER_AVAILABLE and render_dir and font:
             img_path = os.path.join(render_dir, f"{safe_fn(name)}_{wf_no}.png")
-            result = _render_workflow(wf, img_path, font)
+            result = _render_workflow(wf, img_path, font, field_no_map=maps.get("field_no_map", {}))
             if result and os.path.exists(result):
                 from PIL import Image as _PilImg
                 _iw, _ih = _PilImg.open(result).size
@@ -2102,7 +2102,7 @@ def build_list_section(doc, items, section_no, title, id_field):
 # ---------------------------------------------------------------------------
 # Section: script inventory
 # ---------------------------------------------------------------------------
-def build_script_inventory(doc, profiles, root, section_no):
+def build_script_inventory(doc, profiles, root, section_no, maps=None):
     """Appendix collecting all custom scripts from profiles, eForms, and workflows."""
 
     entries = []
@@ -2248,6 +2248,7 @@ def build_script_inventory(doc, profiles, root, section_no):
         "found across indexing profiles, eForms, and workflows."
     )
 
+    fno_map = (maps or {}).get("field_no_map", {})
     for e in entries:
         meta = f"{e['context']} ({e['lang']})" if e['lang'] else e['context']
         blue_heading(doc, e["source"], level=3, meta=meta)
@@ -2255,13 +2256,179 @@ def build_script_inventory(doc, profiles, root, section_no):
             ("Context", e["context"]),
             ("Language", e["lang"] or "—"),
         ], lw=3.5, vw=13.0)
-        add_code_block(doc, e["code"])
+        add_code_block(doc, resolve_field_refs(e["code"], fno_map))
+
+
+# ---------------------------------------------------------------------------
+# Section: server configuration
+# ---------------------------------------------------------------------------
+def _kv_table(doc, rows, lw=5.0, vw=11.5):
+    """Render a two-column label/value table."""
+    t = doc.add_table(rows=len(rows), cols=2)
+    t.style = "Table Grid"
+    for i, (label, value) in enumerate(rows):
+        fill = _theme.hex("grey") if i % 2 else _theme.hex("white")
+        body_cell(t.rows[i].cells, 0, label, fill, bold=True)
+        body_cell(t.rows[i].cells, 1, value or "—", fill)
+    set_col_widths(t, [lw, vw])
+
+
+def _sub_heading(doc, text):
+    p = doc.add_paragraph()
+    p.add_run(text).bold = True
+    p.runs[0].font.size = Pt(10)
+    p.runs[0].font.color.rgb = _theme.docx_rgb("primary")
+    p.paragraph_format.space_before = Pt(10)
+    p.paragraph_format.space_after  = Pt(3)
+
+
+def build_server_info_section(doc, server_info, xml_root, categories, section_no):
+    """
+    Render the Server Configuration section.
+
+    API-derived details (server_info dict) are shown when provided.
+    Retention policies are always rendered if present in the XML.
+    """
+    ret_el = xml_root.find("RetentionPolicies")
+    policies = list(ret_el) if ret_el is not None else []
+
+    # Nothing to show
+    if not server_info and not policies:
+        return
+
+    doc.add_page_break()
+    _manual_heading(doc, sec_heading(section_no, "Server Configuration"),
+                    15, 16, 5, bottom_border=True)
+
+    si = server_info or {}
+
+    if si:
+        # --- System ---
+        _sub_heading(doc, "System")
+        sys_rows = []
+        if si.get("server_name"):        sys_rows.append(("Server Name",      si["server_name"]))
+        if si.get("service_version"):    sys_rows.append(("Service Version",   si["service_version"]))
+        if si.get("customer_id"):        sys_rows.append(("Customer ID",       si["customer_id"]))
+        if si.get("tenant_name"):        sys_rows.append(("Tenant",            si["tenant_name"]))
+        if si.get("region"):             sys_rows.append(("Region",            si["region"]))
+        if si.get("locale"):             sys_rows.append(("Locale",            si["locale"]))
+        if si.get("admin_email"):        sys_rows.append(("Admin Email",       si["admin_email"]))
+        if si.get("domain_names"):       sys_rows.append(("Domain Names",      ", ".join(si["domain_names"])))
+        if si.get("default_domain"):     sys_rows.append(("Default Domain",    si["default_domain"]))
+        if si.get("terms_url"):          sys_rows.append(("Terms of Service",  si["terms_url"]))
+        if sys_rows:
+            _kv_table(doc, sys_rows)
+
+        # --- Database ---
+        db_rows = []
+        if si.get("db_connection"): db_rows.append(("Server / Database",   si["db_connection"]))
+        if si.get("db_username"):   db_rows.append(("Username",            si["db_username"]))
+        if si.get("db_options"):    db_rows.append(("Connection Options",  si["db_options"]))
+        if db_rows:
+            _sub_heading(doc, "Database")
+            _kv_table(doc, db_rows)
+
+        # --- SMTP ---
+        smtp_rows = []
+        if si.get("smtp_server"):    smtp_rows.append(("Server",      si["smtp_server"]))
+        if si.get("smtp_sender"):    smtp_rows.append(("Sender",      si["smtp_sender"]))
+        if "smtp_ssl" in si:         smtp_rows.append(("SSL",         "Yes" if si["smtp_ssl"] else "No"))
+        if si.get("smtp_auth_user"): smtp_rows.append(("Auth User",   si["smtp_auth_user"]))
+        if smtp_rows:
+            _sub_heading(doc, "Email (SMTP)")
+            _kv_table(doc, smtp_rows)
+
+        # --- Storage ---
+        storage_rows = []
+        _storage_labels = [
+            ("buffer_path",   "Buffer"),
+            ("fulltext_path", "Full-Text Index"),
+            ("preview_blob",  "Preview Storage"),
+            ("fulltext_blob", "Full-Text Blob"),
+            ("webviewer_blob","Web Viewer"),
+            ("storage_blob",  "Document Storage Blob"),
+            ("cache_path",    "Cache"),
+            ("report_server", "Report Server"),
+        ]
+        for key, label in _storage_labels:
+            if si.get(key):
+                storage_rows.append((label, si[key]))
+        if storage_rows:
+            _sub_heading(doc, "Storage Areas")
+            t = doc.add_table(rows=1, cols=2)
+            t.style = "Table Grid"
+            hdr_cell(t.rows[0].cells, 0, "Area")
+            hdr_cell(t.rows[0].cells, 1, "Path / URL")
+            for idx, (label, path) in enumerate(storage_rows):
+                fill = _theme.hex("grey") if idx % 2 else _theme.hex("white")
+                rc = t.add_row().cells
+                body_cell(rc, 0, label, fill, bold=True)
+                body_cell(rc, 1, path,  fill, pt=8)
+            set_col_widths(t, [4.0, 12.5])
+
+        # --- Licensed storage ---
+        lic_rows = []
+        if si.get("storage_licensed_gb"):
+            lic_rows.append(("Licensed Storage", f"{si['storage_licensed_gb']} GB"))
+        if si.get("storage_used_gb"):
+            lic_rows.append(("Used / Threshold", f"{si['storage_used_gb']} GB"))
+        if lic_rows:
+            _sub_heading(doc, "Licensed Storage")
+            _kv_table(doc, lic_rows)
+
+    # --- Retention Policies (from XML) ---
+    if policies:
+        cat_name_map = {str(no): name for no, name, _, _ in categories}
+        _sub_heading(doc, "Retention Policies")
+        t = doc.add_table(rows=1, cols=5)
+        t.style = "Table Grid"
+        for i, h in enumerate(["Name", "Duration", "Starts From", "On Expiry", "Applied To"]):
+            hdr_cell(t.rows[0].cells, i, h)
+
+        for idx, pol in enumerate(policies):
+            fill  = _theme.hex("grey") if idx % 2 else _theme.hex("white")
+            name  = pol.findtext("Name") or "—"
+            months = pol.findtext("Months") or ""
+            try:
+                duration = f"{int(months)} months ({int(months)/12:.4g} years)"
+            except (ValueError, TypeError):
+                duration = f"{months} months" if months else "—"
+            start  = pol.findtext("Starting") or "—"
+            purge  = pol.findtext("Purge") == "1"
+            delete = pol.findtext("DeleteDisk") == "1"
+            if purge and delete:
+                expiry = "Purge index + delete files"
+            elif purge:
+                expiry = "Purge index record"
+            elif delete:
+                expiry = "Delete files from disk"
+            else:
+                expiry = "No action"
+
+            sub_cats = pol.findall("SubCtgrys/SubCtgry")
+            active = [s for s in sub_cats if s.findtext("NoRetention") != "1"]
+            if active:
+                cat_names = [cat_name_map.get(s.findtext("CtgryNo") or "", s.findtext("CtgryNo") or "?")
+                             for s in active]
+                applied = f"{len(active)} categories: {', '.join(sorted(cat_names))}"
+            else:
+                applied = "None assigned"
+
+            rc = t.add_row().cells
+            body_cell(rc, 0, name,     fill, bold=True)
+            body_cell(rc, 1, duration, fill)
+            body_cell(rc, 2, start,    fill)
+            body_cell(rc, 3, expiry,   fill)
+            body_cell(rc, 4, applied,  fill, pt=8)
+
+        set_col_widths(t, [3.5, 3.5, 3.0, 3.5, 3.0])
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 ALL_SECTIONS = [
+    "server_info",
     "categories",
     "indexing_profiles",
     "workflows",
@@ -2290,6 +2457,7 @@ def generate(
     log_fn=None,
     theme: Theme = None,
     img_format: str = "png",
+    server_info: dict = None,
 ) -> list:
     """
     Generate a Therefore documentation Word document from an XML export.
@@ -2321,6 +2489,7 @@ def generate(
         active_sections  = active_sections,
         start_section    = start_section,
         img_format       = img_format,
+        server_info      = server_info,
     )
 
     warnings = []
@@ -2532,6 +2701,11 @@ def _main_impl(args, warnings=None):
     ], section_no=_next_sn())
     doc.add_page_break()
 
+    # Server Configuration
+    if "server_info" in sec:
+        _si = getattr(args, "server_info", None)
+        build_server_info_section(doc, _si, root, categories, _next_sn())
+
     # Categories
     if "categories" in sec:
         build_categories(doc, categories, render_dir, include_images, maps,
@@ -2583,7 +2757,7 @@ def _main_impl(args, warnings=None):
 
     # Script Inventory
     if "script_inventory" in sec:
-        build_script_inventory(doc, profiles, root, _next_sn())
+        build_script_inventory(doc, profiles, root, _next_sn(), maps=maps)
 
     doc.save(args.output)
     size_kb = Path(args.output).stat().st_size // 1024

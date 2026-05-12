@@ -26,6 +26,8 @@ try:
 except ImportError:
     _PIL_AVAILABLE = False
 
+_FIELD_REF_RE = re.compile(r'\[(-?\d+)\]')
+
 # ---------------------------------------------------------------------------
 # XML helpers (kept self-contained so this module works standalone)
 # ---------------------------------------------------------------------------
@@ -62,7 +64,7 @@ def safe_node_id(task_no: str) -> str:
 # ---------------------------------------------------------------------------
 # Mermaid syntax generator  (matches theconfiguration-processor exactly)
 # ---------------------------------------------------------------------------
-def build_mermaid(wf_elem) -> str | None:
+def build_mermaid(wf_elem, field_no_map=None) -> str | None:
     """
     Generate Mermaid flowchart TD syntax for a workflow element.
     Returns None if the workflow has no tasks.
@@ -137,7 +139,10 @@ def build_mermaid(wf_elem) -> str | None:
 
             # Build edge label
             if cond:
-                # Truncate long conditions — same as theconfiguration-processor (30 chars)
+                if field_no_map:
+                    cond = _FIELD_REF_RE.sub(
+                        lambda m: f"[{field_no_map.get(m.group(1), m.group(1))}]", cond
+                    )
                 short = cond[:30].replace('"', "'")
                 if len(cond) > 30:
                     short += "..."
@@ -214,7 +219,7 @@ def _autocrop(path: str, padding: int = 24) -> None:
         pass  # non-fatal — leave original
 
 
-def render_workflow(wf_elem, output_path: str, font=None) -> str | None:
+def render_workflow(wf_elem, output_path: str, font=None, field_no_map=None) -> str | None:
     """
     Render a workflow element to a PNG via mmdc.
     `font` is accepted for API compatibility with the category renderer but unused.
@@ -224,7 +229,7 @@ def render_workflow(wf_elem, output_path: str, font=None) -> str | None:
     if not mmdc:
         return None
 
-    mermaid_src = build_mermaid(wf_elem)
+    mermaid_src = build_mermaid(wf_elem, field_no_map=field_no_map)
     if not mermaid_src:
         return None
 

@@ -411,9 +411,52 @@
 
     <hr class="divider">
 
+    <!-- Server Connection -->
+    <div class="wrapper-instructions">
+      <button class="instr-toggle" id="serverToggle">
+        <i class="chevron">›</i> Server Connection <span style="color:var(--muted);font-weight:400;font-size:0.82rem">(optional — enriches Server Configuration section)</span>
+      </button>
+      <div class="instr-body" id="serverBody" style="display:none">
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+          <div>
+            <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">API URL</label>
+            <input type="text" id="apiUrl" placeholder="https://tenant.thereforeonline.com  or  https://server/theservice"
+              style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
+          </div>
+          <div>
+            <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Tenant Name <span style="color:var(--muted)">(auto-detected for thereforeonline.com)</span></label>
+            <input type="text" id="apiTenant" placeholder="e.g. acme  (leave blank for on-premise)"
+              style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
+          </div>
+          <div style="display:flex;gap:10px">
+            <div style="flex:1">
+              <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Username</label>
+              <input type="text" id="apiUsername" autocomplete="username"
+                style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
+            </div>
+            <div style="flex:1">
+              <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Password</label>
+              <input type="password" id="apiPassword" autocomplete="current-password"
+                style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+            <button type="button" id="testConnBtn" class="link-btn"
+              style="padding:6px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card2);cursor:pointer;font-size:0.85rem">
+              Test Connection
+            </button>
+            <span id="testConnResult" style="font-size:0.82rem"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
     <!-- Section selection -->
     <div class="section-label">Sections to include</div>
     <div class="section-grid" id="sectionGrid">
+      <label class="sec-item"><input type="checkbox" class="sec-cb" value="server_info"      checked> Server Configuration</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="categories"       checked> Categories</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="indexing_profiles" checked> Indexing Profiles</label>
       <label class="sec-item"><input type="checkbox" class="sec-cb" value="workflows"        checked> Workflows</label>
@@ -528,6 +571,71 @@ function openInstructions() {
 instrToggle.addEventListener('click', () => {
   const open = instrBody.classList.toggle('open');
   instrToggle.classList.toggle('open', open);
+});
+
+// Server connection panel toggle
+document.getElementById('serverToggle').addEventListener('click', () => {
+  const body = document.getElementById('serverBody');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  document.getElementById('serverToggle').classList.toggle('open', open);
+});
+
+// Auto-detect tenant from thereforeonline.com URLs
+document.getElementById('apiUrl').addEventListener('input', function() {
+  const url = this.value.trim();
+  const tenantInput = document.getElementById('apiTenant');
+  if (!tenantInput.dataset.manuallySet) {
+    try {
+      const host = new URL(url).hostname;
+      if (host.endsWith('.thereforeonline.com')) {
+        tenantInput.value = host.split('.')[0];
+      } else {
+        tenantInput.value = '';
+      }
+    } catch(_) {}
+  }
+});
+document.getElementById('apiTenant').addEventListener('input', function() {
+  this.dataset.manuallySet = this.value ? 'true' : '';
+});
+
+document.getElementById('testConnBtn').addEventListener('click', async () => {
+  const btn    = document.getElementById('testConnBtn');
+  const result = document.getElementById('testConnResult');
+  btn.disabled = true;
+  btn.textContent = 'Testing…';
+  result.textContent = '';
+  result.style.color = 'var(--muted)';
+
+  const form = new FormData();
+  form.append('api_url',      document.getElementById('apiUrl').value.trim());
+  form.append('api_tenant',   document.getElementById('apiTenant').value.trim());
+  form.append('api_username', document.getElementById('apiUsername').value.trim());
+  form.append('api_password', document.getElementById('apiPassword').value);
+
+  try {
+    const resp = await fetch('/test-connection', { method: 'POST', body: form });
+    const data = await resp.json();
+    if (data.ok) {
+      const parts = [];
+      if (data.server_name)     parts.push(data.server_name);
+      if (data.service_version) parts.push(`v${data.service_version}`);
+      if (data.tenant)          parts.push(`tenant: ${data.tenant}`);
+      if (data.region)          parts.push(data.region);
+      result.textContent = '✓ Connected — ' + (parts.join(' · ') || 'OK');
+      result.style.color = 'var(--green, #38a169)';
+    } else {
+      result.textContent = '✗ ' + (data.error || 'Connection failed');
+      result.style.color = '#E53E3E';
+    }
+  } catch (e) {
+    result.textContent = '✗ ' + e.message;
+    result.style.color = '#E53E3E';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Test Connection';
+  }
 });
 
 function updateBtn() {
@@ -706,6 +814,12 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
     const themeId = document.getElementById('themeSelect').value;
     if (themeId) form.append('theme_id', themeId);
   }
+
+  // Server connection (optional)
+  form.append('api_url',      document.getElementById('apiUrl').value.trim());
+  form.append('api_tenant',   document.getElementById('apiTenant').value.trim());
+  form.append('api_username', document.getElementById('apiUsername').value.trim());
+  form.append('api_password', document.getElementById('apiPassword').value);
 
   try {
     // Step 1 — start the job

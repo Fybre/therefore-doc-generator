@@ -110,6 +110,10 @@ async def start_generate(
     sections:      str        = Form(""),
     start_section: int        = Form(0),
     img_format:    str        = Form("png"),
+    api_url:       str        = Form(""),
+    api_tenant:    str        = Form(""),
+    api_username:  str        = Form(""),
+    api_password:  str        = Form(""),
 ):
     xml_bytes     = await xml_file.read()
     wrapper_bytes = await wrapper_file.read() if wrapper_file and wrapper_file.filename else None
@@ -130,7 +134,8 @@ async def start_generate(
     thread = threading.Thread(
         target=_run_job,
         args=(job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
-              sections_list, start_section, theme_bytes, theme_name, img_format, theme_id, template_id),
+              sections_list, start_section, theme_bytes, theme_name, img_format, theme_id, template_id,
+              api_url.strip(), api_tenant.strip(), api_username.strip(), api_password),
         daemon=True,
     )
     thread.start()
@@ -192,6 +197,31 @@ async def download(job_id: str):
     )
 
 
+@app.post("/test-connection")
+async def test_connection(
+    api_url:      str = Form(""),
+    api_tenant:   str = Form(""),
+    api_username: str = Form(""),
+    api_password: str = Form(""),
+):
+    if not api_url.strip() or not api_username.strip():
+        return JSONResponse({"ok": False, "error": "API URL and username are required."})
+    try:
+        from fetch_server_info import fetch_server_info, derive_tenant
+        info = fetch_server_info(api_url.strip(), api_tenant.strip(), api_username.strip(), api_password)
+        tenant = derive_tenant(api_url.strip(), api_tenant.strip())
+        return {
+            "ok":              True,
+            "service_version": info.get("service_version", ""),
+            "server_name":     info.get("server_name", ""),
+            "customer_id":     info.get("customer_id", ""),
+            "tenant":          info.get("tenant_name", "") or tenant,
+            "region":          info.get("region", ""),
+        }
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
+
 @app.post("/validate-wrapper")
 async def validate_wrapper(wrapper_file: UploadFile = File(...)):
     data = await wrapper_file.read()
@@ -211,7 +241,8 @@ async def validate_wrapper(wrapper_file: UploadFile = File(...)):
 # ---------------------------------------------------------------------------
 def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
              sections_list, start_section=1, theme_bytes=None, theme_name=None,
-             img_format="png", theme_id="", template_id=""):
+             img_format="png", theme_id="", template_id="",
+             api_url="", api_tenant="", api_username="", api_password=""):
     tmpdir = tempfile.mkdtemp(prefix="therefore_web_")
     try:
         from build_doc import generate
@@ -251,6 +282,19 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
         output_name = f"{doc_title}_Documentation.docx"
         output_path = os.path.join(tmpdir, output_name)
 
+        server_info = None
+        if api_url and api_username:
+            try:
+                import sys as _sys
+                _sys.path.insert(0, str(ROOT))
+                from fetch_server_info import fetch_server_info
+                job.log_queue.put(f"Connecting to Therefore API at {api_url} ...")
+                server_info = fetch_server_info(api_url, api_tenant, api_username, api_password)
+                job.log_queue.put("Server configuration retrieved.")
+            except Exception as exc:
+                job.log_queue.put(f"Warning: could not fetch server info — {exc}")
+                job.warnings.append(f"Server info unavailable: {exc}")
+
         warnings = generate(
             xml_path, output_path,
             sections      = sections_list,
@@ -259,6 +303,7 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
             log_fn        = job.log_queue.put,
             theme         = theme,
             img_format    = img_format,
+            server_info   = server_info,
         )
         job.warnings = warnings
 
