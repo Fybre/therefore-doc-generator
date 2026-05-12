@@ -2719,7 +2719,7 @@ def _main_impl(args, warnings=None):
                 ai_url         = args.ai_url,
                 ai_model       = getattr(args, "ai_model", None),
                 api_key        = getattr(args, "ai_key", "lm-studio"),
-                log_fn         = log_fn if log_fn else print,
+                log_fn         = print,
             )
         except Exception as exc:
             warnings.append(f"AI summary failed: {exc}")
