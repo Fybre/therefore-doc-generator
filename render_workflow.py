@@ -250,15 +250,7 @@ def render_workflow(wf_elem, output_path: str, font=None, field_no_map=None) -> 
         ]
         _puppeteer_cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "puppeteer.json")
         if os.path.exists(_puppeteer_cfg):
-            try:
-                import json as _json
-                _cfg = _json.loads(open(_puppeteer_cfg).read())
-                _exe = _cfg.get("executablePath", "")
-                # Only pass config if there's no executablePath, or it actually exists
-                if not _exe or os.path.exists(_exe):
-                    cmd += ["--puppeteerConfigFile", _puppeteer_cfg]
-            except Exception:
-                pass
+            cmd += ["--puppeteerConfigFile", _puppeteer_cfg]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
             print(f"  mmdc error: {result.stderr.strip()[:200]}", file=sys.stderr)

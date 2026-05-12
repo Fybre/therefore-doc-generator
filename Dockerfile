@@ -1,11 +1,9 @@
 FROM python:3.11-bookworm
 
-# Node.js via NodeSource (more reliable than apt's outdated version)
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs
-
-# Chromium + all shared libs it needs
-RUN apt-get install -y --no-install-recommends \
+# Node.js + Chromium + system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        nodejs \
+        npm \
         chromium \
         libatk1.0-0 \
         libatk-bridge2.0-0 \
@@ -22,10 +20,7 @@ RUN apt-get install -y --no-install-recommends \
         fonts-noto \
     && rm -rf /var/lib/apt/lists/*
 
-# Confirm chromium is where we expect it
-RUN chromium --version
-
-# Tell Puppeteer to skip downloading its own Chromium and use the system one
+# Tell Puppeteer to use system Chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
@@ -41,10 +36,6 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 WORKDIR /app
 COPY . .
-
-# Write puppeteer config pointing at system Chromium with sandbox disabled
-RUN echo '{"executablePath":"/usr/bin/chromium","args":["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage"]}' \
-    > /app/puppeteer.json
 
 EXPOSE 8000
 
