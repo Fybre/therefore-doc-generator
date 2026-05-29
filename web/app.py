@@ -308,15 +308,22 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
         output_name = f"{doc_title}_Documentation.docx"
         output_path = os.path.join(tmpdir, output_name)
 
-        server_info = None
+        server_info  = None
+        api_security = None
         if api_url and api_username:
             try:
                 import sys as _sys
                 _sys.path.insert(0, str(ROOT))
-                from fetch_server_info import fetch_server_info
+                from fetch_server_info import fetch_server_info, fetch_users_groups
                 job.log_queue.put(f"Connecting to Therefore API at {api_url} ...")
                 server_info = fetch_server_info(api_url, api_tenant, api_username, api_password)
                 job.log_queue.put("Server configuration retrieved.")
+                job.log_queue.put("Fetching users and groups from server ...")
+                api_security = fetch_users_groups(api_url, api_tenant, api_username, api_password)
+                job.log_queue.put(
+                    f"Retrieved {len(api_security['users'])} users, "
+                    f"{len(api_security['groups'])} groups."
+                )
             except Exception as exc:
                 job.log_queue.put(f"Warning: could not fetch server info — {exc}")
                 job.warnings.append(f"Server info unavailable: {exc}")
@@ -330,6 +337,7 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
             theme         = theme,
             img_format    = img_format,
             server_info   = server_info,
+            api_security  = api_security,
             ai_url        = _AI_API_URL or None,
             ai_model      = _AI_MODEL or None,
             ai_key        = _AI_API_KEY,
@@ -346,6 +354,7 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
             final_path = merged_path
         else:
             final_path = output_path
+
 
         # Move result out of tmpdir to a dedicated result dir (tmpdir will be cleaned later)
         result_dir  = tempfile.mkdtemp(prefix="therefore_result_")

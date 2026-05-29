@@ -44,7 +44,7 @@ class SVGDraw:
         self.height = height
         self._theme = theme or DEFAULT_THEME
         self._buf: list[str] = []
-        self._font_size = 11
+        self._font_size = 22
 
     # -- helpers --------------------------------------------------------------
     def _colour(self, c) -> str:
@@ -169,6 +169,27 @@ def draw_table_field(draw: SVGDraw, inp):
             draw.line([x, ry, x + w, ry], fill=(210, 210, 210))
 
 
+def _wrap_svg_label(text, max_px, font_size):
+    """Word-wrap label text to fit within max_px using font_size as avg char width basis."""
+    if not text:
+        return []
+    avg_char_w = font_size * 0.62
+    words = text.split()
+    lines, current, current_w = [], "", 0.0
+    for word in words:
+        word_w = len(word) * avg_char_w
+        sep_w = avg_char_w if current else 0.0
+        if current and current_w + sep_w + word_w > max_px:
+            lines.append(current)
+            current, current_w = word, word_w
+        else:
+            current = (current + " " + word).strip()
+            current_w += sep_w + word_w
+    if current:
+        lines.append(current)
+    return lines
+
+
 def draw_fields(draw: SVGDraw, labels, inputs, clip_x=None, y_offset=0):
     """Draw labels and input fields."""
     t = draw._theme
@@ -178,12 +199,7 @@ def draw_fields(draw: SVGDraw, labels, inputs, clip_x=None, y_offset=0):
             item["x"] = max(item["x"], clip_x + 4)
         item["y"] = item["y"] + y_offset
 
-    for lbl in labels:
-        lines = wrap_text(lbl["caption"], 28)
-        line_height = 12
-        for i, line in enumerate(lines):
-            draw.text((lbl["x"], lbl["y"] + i * line_height), line, fill=t.renderer_rgb("black"))
-
+    # Draw inputs first so label text renders on top (prevents clipping at field edges)
     for inp in inputs:
         if inp["type"] == "checkbox":
             draw.rectangle(
@@ -227,16 +243,17 @@ def draw_fields(draw: SVGDraw, labels, inputs, clip_x=None, y_offset=0):
                 [inp["x"], inp["y"], inp["x"] + inp["w"], inp["y"] + inp["h"]],
                 fill=t.renderer_rgb("white"), outline=t.renderer_rgb("border"),
             )
-            if inp["type"] == 3:
-                # Date dropdown arrow
-                arrow_x = inp["x"] + inp["w"] - 16
+
+            # Dropdown arrow (date fields, and fields explicitly marked as dropdowns)
+            if inp["type"] == 3 or inp.get("dropdown"):
+                arrow_x = inp["x"] + inp["w"] - 18
                 draw.rectangle(
                     [arrow_x, inp["y"] + 1, inp["x"] + inp["w"] - 1, inp["y"] + inp["h"] - 1],
                     fill=t.renderer_rgb("date_bg"), outline=t.renderer_rgb("border"),
                 )
-                ax = arrow_x + 5
+                ax = arrow_x + 6
                 ay = inp["y"] + inp["h"] // 2 - 1
-                draw.polygon([(ax, ay), (ax + 6, ay), (ax + 3, ay + 4)], fill=t.renderer_rgb("black"))
+                draw.polygon([(ax - 3, ay), (ax + 3, ay), (ax, ay + 4)], fill=t.renderer_rgb("black"))
 
             # Lookup button
             from render_categories import LOOKUP_FIELDS
@@ -247,6 +264,14 @@ def draw_fields(draw: SVGDraw, labels, inputs, clip_x=None, y_offset=0):
                     fill=t.renderer_rgb("lookup_btn"), outline=t.renderer_rgb("border"),
                 )
                 draw.text((btn_x + 3, inp["y"] + 3), "...", fill=t.renderer_rgb("black"))
+
+    # Draw labels last so text sits on top of input field borders
+    for lbl in labels:
+        max_px = lbl["w"] * 1.20
+        lines = _wrap_svg_label(lbl["caption"], max_px, draw._font_size)
+        line_height = 32  # 16 logical px * SS=2
+        for i, line in enumerate(lines):
+            draw.text((lbl["x"], lbl["y"] + i * line_height), line, fill=t.renderer_rgb("black"))
 
 
 # ---------------------------------------------------------------------------

@@ -74,6 +74,70 @@ INDEXING_APPEND_MODE = {
     4: "No check", 5: "Error", 6: "Skip document",
 }
 
+# Object type names used by security role assignments. This is a subset of the
+# Therefore DB Codes "TypeNo" mapping used by RoleAssignments.
+OBJECT_TYPES = {
+    1: "Server",
+    2: "Document",
+    3: "Category",
+    4: "Category Field",
+    5: "Datatype",
+    10: "Query",
+    11: "User",
+    12: "Group",
+    17: "Folder",
+    19: "Workflow Process",
+    20: "Workflow Task",
+    22: "Keyword Dictionary",
+    28: "Tree View",
+    32: "Automatic Counter",
+    37: "Case Definition",
+    40: "Stamp",
+    47: "EForm",
+    51: "Role",
+}
+
+# TheRole.Permission flags.
+ROLE_PERMISSION = {
+    0x01: "Operator",
+    0x02: "Administrator",
+    0x04: "Set Permissions",
+    0x08: "Access/Read",
+    0x20: "System Write",
+    0x40: "Category/Case: add documents",
+    0x80: "Manage searches",
+    0x100: "Execute searches",
+    0x200: "Manage keyword dictionary",
+    0x400: "Document/Case: create tasks",
+    0x1000: "Document/Case: view in hit list",
+    0x2000: "Document/Case: open and view",
+    0x4000: "Document/Case: print",
+    0x8000: "Document/Case: export and send",
+    0x40000: "Document/Case: view history",
+    0x80000: "Document: add annotations",
+    0x100000: "Document: delete annotations",
+    0x200000: "Document: edit document",
+    0x400000: "Document: update index data",
+    0x800000: "Document: add file",
+    0x1000000: "Document: delete file",
+    0x2000000: "Document: delete document",
+    0x4000000: "Document: retention protection",
+    0x8000000: "Document/Case: manage links",
+    0x10000000: "Case: create",
+    0x20000000: "Case: delete",
+    0x40000000: "Case: close",
+    0x80000000: "Read permission",
+    0x100000000: "Case: reopen",
+    0x200000000: "Workflow: participate",
+    0x400000000: "Workflow: add a document",
+    0x800000000: "Workflow: view history",
+    0x1000000000: "Workflow: delegate",
+    0x2000000000: "Workflow: view all",
+    0x4000000000: "Workflow: delete",
+    0x8000000000: "Workflow: start manually",
+    0x10000000000: "Case: update index data",
+}
+
 
 def show_id(n) -> str:
     """Display a Therefore ID as its absolute value.
@@ -317,6 +381,238 @@ def parse_lookup_maps(root):
     maps["field_no_map"] = field_no_map
 
     return maps
+
+
+# ---------------------------------------------------------------------------
+# Security helpers (Users / Groups / Roles)
+# ---------------------------------------------------------------------------
+def _text_any(elem, *tags) -> str:
+    for t in tags:
+        v = elem.findtext(t)
+        if v is not None:
+            v = v.strip()
+            if v:
+                return v
+    return ""
+
+
+def _int_any(elem, *tags, default=0) -> int:
+    for t in tags:
+        v = elem.findtext(t)
+        if v is None:
+            continue
+        try:
+            return int(v)
+        except ValueError:
+            continue
+    return default
+
+
+def _bool_any(elem, *tags, default=False) -> bool:
+    v = _text_any(elem, *tags)
+    if not v:
+        return default
+    return v.lower() in ("1", "true", "yes", "y")
+
+
+def _decode_flags(flag_map: dict[int, str], value: int) -> list[str]:
+    names = []
+    for bit in sorted(flag_map):
+        if value & bit:
+            names.append(flag_map[bit])
+    return names
+
+
+def parse_security(root):
+    """
+    Parse Users / Groups / Roles / RoleAssignments if present in the export.
+    Returns None when no user/role data exists in the XML.
+    """
+    users_elem = root.find("Users")
+    roles_elem = root.find("Roles")
+    ra_elem    = root.find("RoleAssignments")
+
+    if users_elem is None and roles_elem is None and ra_elem is None:
+        return None
+
+    people = []
+    if users_elem is not None:
+        for u in users_elem.findall("User"):
+            user_no = _int_any(u, "UserNo", "ADOSUserNo")
+            user_type = _int_any(u, "UserType", "Type")
+            user_name = _text_any(u, "UserName", "Username")
+            display_name = _text_any(u, "DisplayName", "Displayname") or user_name
+            item = {
+                "user_no": user_no,
+                "user_type": user_type,
+                "user_name": user_name,
+                "display_name": display_name,
+                "domain": _text_any(u, "Domain"),
+                "email": _text_any(u, "SMTPAddress", "Email"),
+                "description": _text_any(u, "Description"),
+                "is_domain_user": _bool_any(u, "IsDomainUser"),
+                "members": [],
+            }
+            ug = u.find("UserGroups")
+            if ug is not None:
+                for mem in ug.findall("Group"):
+                    mem_no = _int_any(mem, "UserNo", "ADOSUserNo", "GroupNo")
+                    mem_type = _int_any(mem, "UserType", "Type")
+                    mem_user = _text_any(mem, "UserName", "Username", "GroupName")
+                    mem_disp = _text_any(mem, "DisplayName", "Displayname") or mem_user
+                    item["members"].append({
+                        "user_no": mem_no,
+                        "user_type": mem_type,
+                        "user_name": mem_user,
+                        "display_name": mem_disp,
+                    })
+            people.append(item)
+
+    by_no = {p["user_no"]: p for p in people if p.get("user_no") is not None}
+    by_name = {p["user_name"]: p for p in people if p.get("user_name")}
+
+    roles = []
+    if roles_elem is not None:
+        for r in roles_elem.findall("Role"):
+            role_no = _int_any(r, "RoleNo")
+            name = get_localised(r, "Name") or (r.findtext("Name") or "").strip()
+            desc = get_localised(r, "Description") or (r.findtext("Description") or "").strip()
+            perm = _int_any(r, "Permission")
+            deny = _bool_any(r, "Deny")
+            role = {
+                "role_no": role_no,
+                "name": name or f"Role_{show_id(role_no)}",
+                "description": desc,
+                "permission": perm,
+                "permission_names": _decode_flags(ROLE_PERMISSION, perm) if perm else [],
+                "deny": deny,
+                "users": [],
+                "assignments": [],
+            }
+
+            _ru = r.find("Users")
+            if _ru is not None:
+                for u in _ru.findall("User"):
+                    user_no = _int_any(u, "UserNo")
+                    user_type = _int_any(u, "UserType", "Type")
+                    user_name = _text_any(u, "UserName", "Username")
+                    display_name = _text_any(u, "DisplayName", "Displayname") or user_name
+                    # Prefer canonical record from Users list if available
+                    canonical = by_no.get(user_no) or by_name.get(user_name)
+                    if canonical:
+                        user_name = canonical.get("user_name") or user_name
+                        display_name = canonical.get("display_name") or display_name
+                        user_type = canonical.get("user_type") or user_type
+                    role["users"].append({
+                        "user_no": user_no,
+                        "user_type": user_type,
+                        "user_name": user_name,
+                        "display_name": display_name,
+                    })
+
+            _as = r.find("Assignments")
+            if _as is not None:
+                for a in _as.findall("Assignment"):
+                    obj_type = _int_any(a, "ObjectType", "ObjType")
+                    obj_no = _int_any(a, "ObjectNo", "ObjNo")
+                    sub_no = _int_any(a, "SubObjNo", default=0)
+                    role["assignments"].append({
+                        "obj_type": obj_type,
+                        "obj_type_name": OBJECT_TYPES.get(obj_type, str(obj_type)),
+                        "obj_no": obj_no,
+                        "sub_obj_no": sub_no,
+                        "object_name": _text_any(a, "ObjectName") or "",
+                    })
+
+            roles.append(role)
+
+    # Build object name maps for role assignment resolution
+    _obj_names: dict[tuple, str] = {}
+    for f in root.findall(".//Folders/Folder"):
+        fno_raw = f.findtext("FolderNo")
+        if fno_raw:
+            fname = get_localised(f, "Name") or f.findtext("Name") or ""
+            if fname:
+                _obj_names[(17, int(fno_raw))] = fname
+    for c in root.findall(".//Categories/Category"):
+        cno_raw = c.findtext("CtgryNo") or c.findtext("CategoryNo")
+        if cno_raw:
+            cname = get_localised(c, "Name") or c.findtext("Name") or ""
+            if cname:
+                _obj_names[(3, int(cno_raw))] = cname
+
+    role_name_map = {r["role_no"]: r["name"] for r in roles}
+
+    role_assignments = []
+    if ra_elem is not None:
+        for ra in ra_elem.findall("RoleAssignment"):
+            role_no = _int_any(ra, "RoleNo")
+            obj_type = _int_any(ra, "ObjType")
+            obj_no = _int_any(ra, "ObjNo")
+            sub_no = _int_any(ra, "SubObjNo", default=0)
+            user_no = _int_any(ra, "UserNo")
+
+            # Skip null/placeholder entries
+            if role_no == 0 or user_no == 0:
+                continue
+
+            cond = _text_any(ra, "Condition")
+            stop_inh = _bool_any(ra, "StopInh")
+
+            user = by_no.get(user_no)
+            user_label = user.get("display_name") if user else ""
+
+            role_assignments.append({
+                "role_no": role_no,
+                "role_name": role_name_map.get(role_no, ""),
+                "obj_type": obj_type,
+                "obj_type_name": OBJECT_TYPES.get(obj_type, str(obj_type)),
+                "obj_no": obj_no,
+                "obj_name": _obj_names.get((obj_type, obj_no), ""),
+                "sub_obj_no": sub_no,
+                "user_no": user_no,
+                "user_label": user_label or str(user_no),
+                "stop_inheritance": stop_inh,
+                "condition": cond,
+            })
+
+    # Split users vs groups, and also build reverse "member_of" for users
+    users = [p for p in people if p.get("user_type") == 1]
+    groups = [p for p in people if p.get("user_type") == 2]
+
+    member_of = {p["user_no"]: [] for p in people if p.get("user_no") is not None}
+    for g in groups:
+        for m in g.get("members", []):
+            if m.get("user_no") in member_of:
+                member_of[m["user_no"]].append(g)
+    for u in users:
+        u["member_of"] = member_of.get(u.get("user_no"), [])
+
+    # If roles have no embedded users (this XML format stores assignments separately),
+    # populate each role's users list from role_assignments for display purposes.
+    for r in roles:
+        if not r.get("users") and role_assignments:
+            seen = set()
+            for ra in role_assignments:
+                if ra["role_no"] != r["role_no"]:
+                    continue
+                label = ra.get("user_label") or ""
+                if label and label not in seen:
+                    seen.add(label)
+                    r["users"].append({
+                        "user_no": ra.get("user_no"),
+                        "user_name": label,
+                        "display_name": label,
+                    })
+
+    if not (people or roles or role_assignments):
+        return None
+    return {
+        "users": users,
+        "groups": groups,
+        "roles": roles,
+        "role_assignments": role_assignments,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -2476,6 +2772,7 @@ def build_ai_summary_section(doc, summary_text: str, section_no):
             doc.add_paragraph(para)
 
 
+
 ALL_SECTIONS = [
     "ai_summary",
     "server_info",
@@ -2483,6 +2780,7 @@ ALL_SECTIONS = [
     "indexing_profiles",
     "workflows",
     "eforms",
+    "security",
     "relationships",
     "folder_structure",
     "keyword_dicts",
@@ -2508,6 +2806,7 @@ def generate(
     theme: Theme = None,
     img_format: str = "png",
     server_info: dict = None,
+    api_security: dict = None,
     ai_url: str = None,
     ai_model: str = None,
     ai_key: str = "lm-studio",
@@ -2543,6 +2842,7 @@ def generate(
         start_section    = start_section,
         img_format       = img_format,
         server_info      = server_info,
+        api_security     = api_security,
         ai_url           = ai_url,
         ai_model         = ai_model,
         ai_key           = ai_key,
@@ -2645,15 +2945,8 @@ def _main_impl(args, warnings=None):
             # Also generate PNGs for Word embedding
             if include_images:
                 try:
-                    from render_categories import render_simple_category, render_tabbed_category
-                    from PIL import ImageFont
-                    try:
-                        pil_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
-                    except Exception:
-                        try:
-                            pil_font = ImageFont.truetype("arial.ttf", 11)
-                        except Exception:
-                            pil_font = ImageFont.load_default()
+                    from render_categories import render_simple_category, render_tabbed_category, load_font as _cat_load_font, SS as _CAT_SS
+                    pil_font = _cat_load_font(11 * _CAT_SS)
                     print(f"Rendering PNG fallbacks for Word embedding ...")
                     for _no, name, _fno, cat_elem in categories:
                         if cat_has_tabs(cat_elem):
@@ -2664,15 +2957,8 @@ def _main_impl(args, warnings=None):
                     pass  # PNG fallback non-critical
         else:
             try:
-                from render_categories import render_simple_category, render_tabbed_category
-                from PIL import ImageFont
-                try:
-                    pil_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 11)
-                except Exception:
-                    try:
-                        pil_font = ImageFont.truetype("arial.ttf", 11)
-                    except Exception:
-                        pil_font = ImageFont.load_default()
+                from render_categories import render_simple_category, render_tabbed_category, load_font as _cat_load_font, SS as _CAT_SS
+                pil_font = _cat_load_font(11 * _CAT_SS)
 
                 print(f"Rendering {len(categories)} categories ...")
                 for _no, name, _fno, cat_elem in categories:
@@ -2725,6 +3011,18 @@ def _main_impl(args, warnings=None):
     _ef_el = root.find("EForms")
     _eforms_count = len(list(_ef_el)) if _ef_el is not None else 0
 
+    # Optional security section (Users / Groups / Roles)
+    # API data (live from server) takes priority over XML for users/groups;
+    # roles and role_assignments always come from the XML export.
+    security = parse_security(root)
+    _api_sec = getattr(args, "api_security", None)
+    if _api_sec:
+        if security is None:
+            security = _api_sec
+        else:
+            security["users"]  = _api_sec["users"]
+            security["groups"] = _api_sec["groups"]
+
     sec    = getattr(args, "active_sections", set(ALL_SECTIONS))
     _start = getattr(args, "start_section", 1)
 
@@ -2765,7 +3063,7 @@ def _main_impl(args, warnings=None):
             print(f"AI summary failed: {exc}")
 
     # Overview
-    build_overview(doc, [
+    overview_counts = [
         ("Categories",         len(categories)),
         ("Workflow Processes",  len(workflows)),
         ("eForms",             _eforms_count),
@@ -2775,7 +3073,14 @@ def _main_impl(args, warnings=None):
         ("Queries",             len(queries)),
         ("Report Definitions",  len(reports)),
         ("Stamps",              len(stamps)),
-    ], section_no=_next_sn())
+    ]
+    if security:
+        overview_counts += [
+            ("Users", len(security.get("users", []))),
+            ("Groups", len(security.get("groups", []))),
+            ("Roles", len(security.get("roles", []))),
+        ]
+    build_overview(doc, overview_counts, section_no=_next_sn())
     doc.add_page_break()
 
     # AI Summary section
@@ -2812,6 +3117,10 @@ def _main_impl(args, warnings=None):
             build_eforms(doc, root, _next_sn(), maps=maps,
                          render_dir=render_dir, font=pil_font)
 
+    # Users / Groups / Roles (optional; not all exports include it)
+    if "security" in sec and security:
+        build_security_section(doc, security, _next_sn())
+
     # Category Relationships
     if "relationships" in sec:
         build_relationship_diagram(doc, root, maps, categories, _next_sn(),
@@ -2839,7 +3148,7 @@ def _main_impl(args, warnings=None):
     # Script Inventory
     if "script_inventory" in sec:
         build_script_inventory(doc, profiles, root, _next_sn(), maps=maps,
-                               ai_url=getattr(args, "ai_url", None),
+                               ai_url=getattr(args, "ai_url", None) if "ai_summary" in sec else None,
                                ai_model=getattr(args, "ai_model", None),
                                ai_key=getattr(args, "ai_key", "lm-studio"))
 
@@ -2850,6 +3159,137 @@ def _main_impl(args, warnings=None):
     if _tmp_dir:
         shutil.rmtree(_tmp_dir, ignore_errors=True)
 
+
+# ---------------------------------------------------------------------------
+# Section: users / groups / roles (optional)
+# ---------------------------------------------------------------------------
+def _join_limited(values: list[str], limit: int = 25) -> str:
+    values = [v for v in (values or []) if v]
+    if len(values) <= limit:
+        return ", ".join(values)
+    return ", ".join(values[:limit]) + f" … (+{len(values) - limit} more)"
+
+
+def build_security_section(doc, security: dict, section_no):
+    doc.add_page_break()
+    _manual_heading(doc, sec_heading(section_no, "Users, Groups, and Roles"),
+                    15, 16, 5, bottom_border=True)
+    doc.add_paragraph(
+        "This section is generated only when user/group/role details are present in the exported configuration XML."
+    )
+
+    users = security.get("users", [])
+    groups = security.get("groups", [])
+    roles = security.get("roles", [])
+    role_assignments = security.get("role_assignments", [])
+
+    # Groups
+    if groups:
+        blue_heading(doc, "Groups", level=2, meta=f"({len(groups)})")
+        t = doc.add_table(rows=1, cols=2)
+        t.style = "Table Grid"
+        hdr = t.rows[0].cells
+        hdr_cell(hdr, 0, "Group")
+        hdr_cell(hdr, 1, "Members")
+        for idx, g in enumerate(sorted(groups, key=lambda x: (x.get("display_name") or x.get("user_name") or ""))):
+            fill = _theme.hex("grey") if idx % 2 == 1 else _theme.hex("white")
+            rc = t.add_row().cells
+            name = g.get("display_name") or g.get("user_name") or ""
+            members = [m.get("display_name") or m.get("user_name") or "" for m in g.get("members", [])]
+            body_cell(rc, 0, name, fill, bold=True)
+            body_cell(rc, 1, _join_limited(members, limit=30), fill, pt=8)
+        set_col_widths(t, [5.0, 11.5])
+        doc.add_paragraph()
+
+    # Users
+    if users:
+        blue_heading(doc, "Users", level=2, meta=f"({len(users)})")
+        has_status = any("disabled" in u for u in users)
+        ncols = 5 if has_status else 4
+        t = doc.add_table(rows=1, cols=ncols)
+        t.style = "Table Grid"
+        hdr = t.rows[0].cells
+        hdr_cell(hdr, 0, "Username")
+        hdr_cell(hdr, 1, "Display Name")
+        hdr_cell(hdr, 2, "Email")
+        hdr_cell(hdr, 3, "Member Of")
+        if has_status:
+            hdr_cell(hdr, 4, "Status")
+        for idx, u in enumerate(sorted(users, key=lambda x: (x.get("user_name") or ""))):
+            fill = _theme.hex("grey") if idx % 2 == 1 else _theme.hex("white")
+            rc = t.add_row().cells
+            member_of = [g.get("display_name") or g.get("user_name") or "" for g in (u.get("member_of") or [])]
+            body_cell(rc, 0, u.get("user_name", ""), fill, bold=True)
+            body_cell(rc, 1, u.get("display_name", ""), fill)
+            body_cell(rc, 2, u.get("email", ""), fill, pt=8)
+            body_cell(rc, 3, _join_limited(member_of, limit=10), fill, pt=8)
+            if has_status:
+                body_cell(rc, 4, "Disabled" if u.get("disabled") else "Active", fill, pt=8)
+        if has_status:
+            set_col_widths(t, [3.8, 4.2, 4.2, 2.7, 1.6])
+        else:
+            set_col_widths(t, [4.2, 4.8, 4.8, 2.7])
+        doc.add_paragraph()
+
+    # Roles
+    if roles:
+        blue_heading(doc, "Roles", level=2, meta=f"({len(roles)})")
+        t = doc.add_table(rows=1, cols=5)
+        t.style = "Table Grid"
+        hdr = t.rows[0].cells
+        hdr_cell(hdr, 0, "Role")
+        hdr_cell(hdr, 1, "Deny")
+        hdr_cell(hdr, 2, "Permissions")
+        hdr_cell(hdr, 3, "Assigned Users/Groups")
+        hdr_cell(hdr, 4, "Description")
+        for idx, r in enumerate(sorted(roles, key=lambda x: (x.get("name") or ""))):
+            fill = _theme.hex("grey") if idx % 2 == 1 else _theme.hex("white")
+            rc = t.add_row().cells
+            assigned = [
+                (u.get("display_name") or u.get("user_name") or "")
+                for u in (r.get("users") or [])
+            ]
+            perms = r.get("permission_names") or []
+            perm_txt = _join_limited(perms, limit=12) if perms else (f"0x{int(r.get('permission') or 0):X}")
+            body_cell(rc, 0, r.get("name", ""), fill, bold=True)
+            body_cell(rc, 1, "Yes" if r.get("deny") else "No", fill)
+            body_cell(rc, 2, perm_txt, fill, pt=8)
+            body_cell(rc, 3, _join_limited(assigned, limit=18), fill, pt=8)
+            body_cell(rc, 4, (r.get("description") or ""), fill, pt=8)
+        set_col_widths(t, [4.8, 1.1, 4.2, 3.6, 3.6])
+        doc.add_paragraph()
+
+    # Role assignments (object-level security)
+    if role_assignments:
+        blue_heading(doc, "Role Assignments", level=2, meta=f"({len(role_assignments)})")
+        doc.add_paragraph(
+            "Role assignments apply roles to specific objects (folders, categories, workflows, etc.), "
+            "optionally with conditions and inheritance overrides."
+        )
+        t = doc.add_table(rows=1, cols=7)
+        t.style = "Table Grid"
+        hdr = t.rows[0].cells
+        for i, h in enumerate(["Role", "Object Type", "Object", "Sub Obj No", "User/Group", "Stop Inheritance", "Condition"]):
+            hdr_cell(hdr, i, h)
+        for idx, ra in enumerate(role_assignments):
+            fill = _theme.hex("grey") if idx % 2 == 1 else _theme.hex("white")
+            rc = t.add_row().cells
+            role = ra.get("role_name") or f"Role {show_id(ra.get('role_no', ''))}"
+            cond = (ra.get("condition") or "").strip()
+            if len(cond) > 180:
+                cond = cond[:180] + "…"
+            obj_name = ra.get("obj_name") or ""
+            obj_id = show_id(ra.get("obj_no", ""))
+            obj_cell = f"{obj_name} ({obj_id})" if obj_name else obj_id
+            body_cell(rc, 0, role, fill, pt=8, bold=True)
+            body_cell(rc, 1, ra.get("obj_type_name") or str(ra.get("obj_type") or ""), fill, pt=8)
+            body_cell(rc, 2, obj_cell, fill, pt=8)
+            body_cell(rc, 3, str(ra.get("sub_obj_no", "")) if ra.get("sub_obj_no") else "", fill, pt=8)
+            body_cell(rc, 4, ra.get("user_label") or str(ra.get("user_no") or ""), fill, pt=8)
+            body_cell(rc, 5, "Yes" if ra.get("stop_inheritance") else "No", fill, pt=8)
+            body_cell(rc, 6, cond, fill, pt=8)
+        set_col_widths(t, [3.1, 2.5, 3.2, 1.3, 2.6, 1.6, 2.2])
+        doc.add_paragraph()
 
 # ---------------------------------------------------------------------------
 # CLI entry point
