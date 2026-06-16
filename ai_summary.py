@@ -7,14 +7,25 @@ from __future__ import annotations
 
 
 def _build_prompt(categories, workflows, profiles, eforms, maps, server_info=None) -> str:
+    from build_doc import get_name
+
     lines = [
-        "You are writing a technical design document for a Therefore document management "
-        "system implementation. Based only on the configuration data below, write a "
-        "factual 3-5 paragraph description of this specific system. Be concrete and "
-        "specific — name the actual categories, workflows, and integrations present. "
-        "Do not use marketing language, do not say things like 'streamline', 'robust', "
-        "'leverage', 'comprehensive', or 'enhance'. Do not invent features not present "
-        "in the data. Write in plain technical prose, no bullet points or headings.",
+        "You are writing the opening section of a technical design document for a Therefore "
+        "document management system implementation. Your task is to write a concise executive "
+        "summary — 2 to 3 short paragraphs — that a non-technical reader can use to understand "
+        "what this system does and why it exists.",
+        "",
+        "Guidelines:",
+        "- Infer the business purpose from the category and workflow names. What kinds of "
+        "documents or processes does this system manage? What business domain does it serve?",
+        "- Describe the overall shape of the system: what the main document types are, what "
+        "the key workflows do, and how users interact with it (e.g. via eForms).",
+        "- Do NOT list counts, field numbers, or task numbers. Do not enumerate every category "
+        "or workflow by name unless it helps explain the purpose.",
+        "- Do not use marketing language. Do not say 'streamline', 'robust', 'leverage', "
+        "'comprehensive', 'enhance', or 'solution'.",
+        "- Do not invent features not supported by the data below.",
+        "- Write in plain prose. No bullet points, no headings, no bold text.",
         "",
         "SYSTEM CONFIGURATION",
         "====================",
@@ -26,51 +37,26 @@ def _build_prompt(categories, workflows, profiles, eforms, maps, server_info=Non
             lines.append(f"Tenant: {server_info['tenant_name']}")
         if server_info.get("region"):
             lines.append(f"Region: {server_info['region']}")
-        if server_info.get("server_name"):
-            lines.append(f"Server: {server_info['server_name']}")
-        if server_info.get("service_version"):
-            lines.append(f"Service version: {server_info['service_version']}")
 
-    # Categories
-    lines.append(f"\nCategories ({len(categories)}):")
-    for no, name, _folder, cat in categories:
-        fields_el = cat.find("Fields")
-        field_count = len(list(fields_el)) if fields_el is not None else 0
-        lines.append(f"  - {name} ({field_count} fields)")
+    # Categories — names only, no field counts
+    cat_names = [name for _no, name, _folder, _cat in categories]
+    lines.append(f"\nDocument categories ({len(cat_names)}): {', '.join(cat_names)}")
 
-    # Workflows
-    lines.append(f"\nWorkflow Processes ({len(workflows)}):")
-    for wf in workflows:
-        from build_doc import get_name
-        name = get_name(wf) or "Unnamed"
-        tasks_el = wf.find("Tasks")
-        task_count = len(list(tasks_el)) if tasks_el is not None else 0
-        lines.append(f"  - {name} ({task_count} tasks)")
+    # Workflows — names only
+    wf_names = [get_name(wf) or "Unnamed" for wf in workflows]
+    if wf_names:
+        lines.append(f"\nWorkflow processes ({len(wf_names)}): {', '.join(wf_names)}")
 
-    # Indexing profiles
-    lines.append(f"\nIndexing Profiles ({len(profiles)}):")
-    for p in profiles[:20]:
-        lines.append(f"  - {p['name']} → {p['target_cat'] or '(no target)'}")
-    if len(profiles) > 20:
-        lines.append(f"  ... and {len(profiles) - 20} more")
-
-    # eForms
-    ef_list = [e for e in (eforms or []) if e.get("name")]
+    # eForms — names only
+    ef_list = [e["name"] for e in (eforms or []) if e.get("name")]
     if ef_list:
-        lines.append(f"\neForms ({len(ef_list)}):")
-        for ef in ef_list[:15]:
-            lines.append(f"  - {ef['name']}")
-        if len(ef_list) > 15:
-            lines.append(f"  ... and {len(ef_list) - 15} more")
+        lines.append(f"\neForms: {', '.join(ef_list[:15])}")
 
-    # Keyword dictionaries
+    # Keyword dictionaries — names give domain context
     kw = maps.get("kw_dicts", [])
     if kw:
-        names = [d["name"] for d in kw if d.get("name")]
-        lines.append(f"\nKeyword Dictionaries ({len(kw)}): {', '.join(names[:10])}")
-
-    # Retention policies
-    # (passed via server_info or maps — skip if not present)
+        kw_names = [d["name"] for d in kw if d.get("name")]
+        lines.append(f"\nKeyword dictionaries: {', '.join(kw_names[:15])}")
 
     lines += ["", "Write the executive summary now:"]
     return "\n".join(lines)
@@ -137,7 +123,7 @@ def generate_ai_summary(
         log_fn(f"Requesting AI summary from {ai_url} ...")
 
     kwargs = {"model": ai_model or "local-model", "messages": [{"role": "user", "content": prompt}],
-              "temperature": 0.4, "max_tokens": 1024}
+              "temperature": 0.3, "max_tokens": 512}
 
     response = client.chat.completions.create(**kwargs)
     text = response.choices[0].message.content.strip()

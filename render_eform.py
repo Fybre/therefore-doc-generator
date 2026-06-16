@@ -22,23 +22,25 @@ from PIL import Image, ImageDraw, ImageFont
 # Colours
 # ---------------------------------------------------------------------------
 BG          = (255, 255, 255)
-PANEL_HDR   = (31,  78,  121)   # Therefore blue
-PANEL_HDR_T = (255, 255, 255)
-PANEL_BG    = (248, 250, 252)
-PANEL_BDR   = (180, 200, 220)
+PANEL_HDR   = (245, 246, 248)   # light grey (bootstrap-like)
+PANEL_HDR_T = (20,  20,  20)
+PANEL_BG    = (255, 255, 255)
+PANEL_BDR   = (214, 220, 228)
 INPUT_BG    = (255, 255, 255)
-INPUT_BDR   = (180, 180, 180)
-INPUT_PH    = (190, 190, 190)
-LABEL_FG    = (50,  50,  50)
-BTN_BG      = (31,  78,  121)
+INPUT_BG_DISABLED = (239, 242, 245)
+INPUT_BDR   = (200, 205, 212)
+INPUT_PH    = (150, 160, 172)
+LABEL_FG    = (30,  35,  40)
+BTN_BG      = (0,   123, 255)   # bootstrap-ish primary
 BTN_TXT     = (255, 255, 255)
 BTN_SEC_BG  = (108, 117, 125)
+BTN_SUCCESS_BG = (40, 167, 69)
 CB_TICK     = (31,  78,  121)
-GRID_HDR    = (220, 230, 240)
-GRID_BDR    = (180, 180, 180)
+GRID_HDR    = (246, 248, 250)
+GRID_BDR    = (214, 220, 228)
 PAGE_SEP    = (220, 220, 220)
-PAGE_TITLE_BG = (240, 244, 248)
-PAGE_TITLE_FG = (31,  78,  121)
+PAGE_TITLE_BG = (255, 255, 255)
+PAGE_TITLE_FG = (10,  90,  180)
 
 # ---------------------------------------------------------------------------
 # Layout constants
@@ -227,26 +229,43 @@ class FormRenderer:
                            font=self.f["label"], fill=(200, 40, 40))
         self.y += LABEL_H
 
-    def _input_box(self, x, w, placeholder="", icon=None):
+    def _draw_icon(self, x0, y0, size, icon, fg):
+        # Small, font-independent icons to avoid emoji fallback issues.
+        if icon == "dropdown":
+            cx = x0 + size // 2
+            cy = y0 + size // 2 + 1
+            self.draw.polygon([(cx - 4, cy - 2), (cx + 4, cy - 2), (cx, cy + 3)], fill=fg)
+            return
+        if icon == "calendar":
+            # Simple calendar: outline + header bar + two rings
+            self.draw.rectangle([x0, y0, x0 + size, y0 + size], outline=fg, width=1)
+            self.draw.rectangle([x0, y0, x0 + size, y0 + 4], fill=fg)
+            self.draw.rectangle([x0 + 3, y0 - 1, x0 + 5, y0 + 2], fill=fg)
+            self.draw.rectangle([x0 + size - 5, y0 - 1, x0 + size - 3, y0 + 2], fill=fg)
+            return
+        if icon == "search":
+            # Magnifier: circle + handle
+            r = 5
+            cx = x0 + r + 1
+            cy = y0 + r + 1
+            self.draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=fg, width=1)
+            self.draw.line([(cx + 4, cy + 4), (cx + 8, cy + 8)], fill=fg, width=2)
+            return
+
+    def _input_box(self, x, w, placeholder="", icon=None, disabled=False):
         x1 = x + w
         y1 = self.y + INPUT_H
+        fill = INPUT_BG_DISABLED if disabled else INPUT_BG
         self.draw.rectangle([x, self.y, x1, y1],
-                            fill=INPUT_BG, outline=INPUT_BDR)
+                            fill=fill, outline=INPUT_BDR)
         if placeholder:
             self.draw.text((x + 6, self.y + 7), placeholder,
                            font=self.f["small"], fill=INPUT_PH)
-        if icon == "calendar":
-            self.draw.text((x1 - 20, self.y + 6), "📅",
-                           font=self.f["small"], fill=INPUT_PH)
-        elif icon == "search":
-            self.draw.text((x1 - 20, self.y + 6), "🔍",
-                           font=self.f["small"], fill=INPUT_PH)
-        elif icon == "dropdown":
-            # Draw a simple triangle
-            cx = x1 - 14
-            cy = self.y + INPUT_H // 2
-            self.draw.polygon([(cx, cy - 3), (cx + 8, cy - 3), (cx + 4, cy + 3)],
-                              fill=INPUT_PH)
+        if icon in ("calendar", "search", "dropdown"):
+            btn_w = 26
+            bx0 = x1 - btn_w
+            self.draw.rectangle([bx0, self.y, x1, y1], fill=(250, 251, 252), outline=INPUT_BDR)
+            self._draw_icon(bx0 + 6, self.y + 6, 14, icon, INPUT_PH)
         self.y += INPUT_H
 
     # -- component renderers -------------------------------------------------
@@ -254,34 +273,38 @@ class FormRenderer:
         lbl  = comp.get("label", "")
         req  = comp.get("validate", {}).get("required", False)
         icon = "search" if comp.get("type") == "lookup" else None
+        disabled = bool(comp.get("disabled") or comp.get("readonly"))
         self._label(lbl, x, required=req)
-        self._input_box(x, w, icon=icon)
+        self._input_box(x, w, icon=icon, disabled=disabled)
         self.y += GAP
 
     def _textarea(self, comp, x, w):
         lbl = comp.get("label", "")
         req = comp.get("validate", {}).get("required", False)
+        disabled = bool(comp.get("disabled") or comp.get("readonly"))
         self._label(lbl, x, required=req)
         y1 = self.y + 72
         self.draw.rectangle([x, self.y, x + w, y1],
-                            fill=INPUT_BG, outline=INPUT_BDR)
+                            fill=INPUT_BG_DISABLED if disabled else INPUT_BG, outline=INPUT_BDR)
         self.y = y1 + GAP
 
     def _datetime_field(self, comp, x, w):
         lbl = comp.get("label", "")
         req = comp.get("validate", {}).get("required", False)
+        disabled = bool(comp.get("disabled") or comp.get("readonly"))
         self._label(lbl, x, required=req)
-        self._input_box(x, w, icon="calendar")
+        self._input_box(x, w, icon="calendar", disabled=disabled)
         self.y += GAP
 
     def _select_field(self, comp, x, w):
         lbl = comp.get("label", "")
         req = comp.get("validate", {}).get("required", False)
+        disabled = bool(comp.get("disabled") or comp.get("readonly"))
         self._label(lbl, x, required=req)
         # Show first option as placeholder if available
         values = (comp.get("data") or {}).get("values") or []
         ph = values[0].get("label", "") if values else ""
-        self._input_box(x, w, placeholder=ph or "Select…", icon="dropdown")
+        self._input_box(x, w, placeholder=ph or "Select…", icon="dropdown", disabled=disabled)
         self.y += GAP
 
     def _checkbox(self, comp, x, w):
@@ -300,7 +323,10 @@ class FormRenderer:
     def _button(self, comp, x, w):
         lbl  = comp.get("label", "")
         theme = comp.get("theme", "primary")
-        bg = BTN_BG if theme in ("primary", "") else BTN_SEC_BG
+        if theme == "success":
+            bg = BTN_SUCCESS_BG
+        else:
+            bg = BTN_BG if theme in ("primary", "") else BTN_SEC_BG
         bw   = min(text_w(self.draw, lbl, self.f["btn"]) + 28, w)
         y1   = self.y + 28
         draw_rounded_rect(self.draw, x, self.y, x + bw, y1, 4, bg)
@@ -357,7 +383,9 @@ class FormRenderer:
         self.y = y_max + GAP
 
     def _panel(self, comp, x, w):
-        label  = comp.get("label") or comp.get("title") or ""
+        title = comp.get("title") or ""
+        label = comp.get("label") or ""
+        header = title if (title and label.strip().lower() in ("", "panel")) else (label or title)
         children = [c for c in comp.get("components", [])
                     if not c.get("hidden")]
         inner_h = form_height(children, w - PANEL_PAD * 2) + PANEL_PAD
@@ -365,10 +393,20 @@ class FormRenderer:
         # Header bar
         hdr_y1 = self.y + LABEL_H + 6
         self.draw.rectangle([x, self.y, x + w, hdr_y1],
-                            fill=PANEL_HDR)
-        if label:
-            self.draw.text((x + 8, self.y + 4), label,
-                           font=self.f["header"], fill=PANEL_HDR_T)
+                            fill=PANEL_HDR, outline=PANEL_BDR)
+        if header:
+            tx = x + 10
+            ty = self.y + 4
+            # Collapsible caret indicator
+            if comp.get("collapsible"):
+                cx = x + 8
+                cy = self.y + 9
+                if comp.get("collapsed"):
+                    self.draw.polygon([(cx, cy - 4), (cx, cy + 4), (cx + 5, cy)], fill=INPUT_PH)
+                else:
+                    self.draw.polygon([(cx - 3, cy - 1), (cx + 3, cy - 1), (cx, cy + 4)], fill=INPUT_PH)
+                tx = x + 16
+            self.draw.text((tx, ty), header, font=self.f["header"], fill=PANEL_HDR_T)
         # Body
         body_y0 = hdr_y1
         body_y1 = body_y0 + inner_h
@@ -428,7 +466,7 @@ def render_eform(ef_elem, output_path: str, font=None) -> str | None:
     if not fdef_text:
         return None
     try:
-        fdef = json.loads(fdef_text)
+        fdef = json.loads(html.unescape(fdef_text))
     except json.JSONDecodeError:
         return None
 
@@ -470,13 +508,16 @@ def render_eform(ef_elem, output_path: str, font=None) -> str | None:
 
     for kind, data in sections:
         if kind == "page":
-            label    = data.get("label") or data.get("title") or ""
+            title = data.get("title") or ""
+            label = data.get("label") or ""
+            header = title if (title and label.strip().lower() in ("", "panel")) else (label or title)
             children = [c for c in data.get("components", []) if not c.get("hidden")]
             if not children:
                 continue
             # Page title banner
             draw.rectangle([0, y, CANVAS_W, y + 28], fill=PAGE_TITLE_BG)
-            draw.text((PAD, y + 6), label, font=f["page"], fill=PAGE_TITLE_FG)
+            draw.text((PAD, y + 6), header, font=f["page"], fill=PAGE_TITLE_FG)
+            draw.line([(0, y + 28), (CANVAS_W, y + 28)], fill=PANEL_BDR, width=1)
             y += 28 + 8
             r = FormRenderer(draw, PAD, COL_W)
             r.y = y

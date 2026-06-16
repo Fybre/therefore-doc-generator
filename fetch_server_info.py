@@ -83,6 +83,103 @@ def _global_setting(base: str, key: int, headers: dict) -> str | None:
     return None
 
 
+def _make_headers(username: str, password: str, tenant: str) -> dict:
+    auth_header = base64.b64encode(f"{username}:{password}".encode()).decode()
+    h = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": f"Basic {auth_header}",
+    }
+    if tenant:
+        h["TenantName"] = tenant
+    return h
+
+
+def fetch_users_groups(api_url: str, tenant: str, username: str, password: str) -> dict:
+    """
+    Fetch all users and group memberships from the Therefore API.
+
+    Returns a dict compatible with parse_security() output:
+        {"users": [...], "groups": [...], "roles": [], "role_assignments": [], "source": "api"}
+
+    Each user has: user_no, user_type, user_name, display_name, email, disabled, member_of.
+    Each group has: user_no, user_type, user_name, display_name, members.
+    """
+    base    = _restun_base(api_url)
+    tenant  = derive_tenant(api_url, tenant)
+    headers = _make_headers(username, password, tenant)
+
+    # 1. All named users (Flags=4; 0–3 return empty list)
+    raw_users = _post(base, "ExecuteUsersQuery", {"Flags": 4}, headers).get("Users", [])
+
+    users = []
+    user_by_name: dict = {}
+    for u in raw_users:
+        uname = u.get("UserName", "")
+        obj = {
+            "user_no":      u.get("UserId") or 0,
+            "user_type":    1,
+            "user_name":    uname,
+            "display_name": u.get("DisplayName") or uname,
+            "email":        u.get("SMTP", ""),
+            "disabled":     bool(u.get("Disabled")),
+            "members":      [],
+            "member_of":    [],
+        }
+        users.append(obj)
+        user_by_name[uname] = obj
+
+    # 2. All groups via GetObjects Type=11; Data==2 → group
+    items = _post(base, "GetObjects", {"Flags": 0, "Type": 11}, headers).get("ItemList", [])
+    raw_groups = [i for i in items if i.get("Data") == 2]
+
+    # 3. Members per group
+    member_of: dict = {u["user_name"]: [] for u in users}
+    groups = []
+    for g in raw_groups:
+        gname = g.get("Name", "")
+        try:
+            members_raw = _post(base, "GetUsersFromGroup", {"GroupName": gname}, headers).get("Users", [])
+        except Exception:
+            members_raw = []
+
+        members = []
+        for m in members_raw:
+            mname = m.get("UserName", "")
+            members.append({
+                "user_no":      m.get("UserId") or 0,
+                "user_type":    1,
+                "user_name":    mname,
+                "display_name": m.get("DisplayName") or mname,
+            })
+            if mname in member_of:
+                member_of[mname].append(gname)
+
+        groups.append({
+            "user_no":      g.get("ID") or 0,
+            "user_type":    2,
+            "user_name":    gname,
+            "display_name": gname,
+            "email":        "",
+            "disabled":     False,
+            "members":      members,
+        })
+
+    # Attach member_of lists to users
+    for u in users:
+        u["member_of"] = [
+            {"user_name": gn, "display_name": gn, "user_no": 0, "user_type": 2}
+            for gn in member_of.get(u["user_name"], [])
+        ]
+
+    return {
+        "users":            users,
+        "groups":           groups,
+        "roles":            [],
+        "role_assignments": [],
+        "source":           "api",
+    }
+
+
 def fetch_server_info(api_url: str, tenant: str, username: str, password: str) -> dict:
     """
     Fetch Therefore server configuration details.
@@ -90,16 +187,9 @@ def fetch_server_info(api_url: str, tenant: str, username: str, password: str) -
     Returns a dict of discovered values; individual keys absent on failure.
     Raises urllib.error.HTTPError / URLError on connection or auth failure.
     """
-    base   = _restun_base(api_url)
-    tenant = derive_tenant(api_url, tenant)
-
-    auth_header = base64.b64encode(f"{username}:{password}".encode()).decode()
-    headers = {
-        "Content-Type": "application/json; charset=utf-8",
-        "Authorization": f"Basic {auth_header}",
-    }
-    if tenant:
-        headers["TenantName"] = tenant
+    base    = _restun_base(api_url)
+    tenant  = derive_tenant(api_url, tenant)
+    headers = _make_headers(username, password, tenant)
 
     anon_headers = {"Content-Type": "application/json; charset=utf-8"}
     if tenant:
