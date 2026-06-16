@@ -28,28 +28,49 @@ python build_doc.py TheConfiguration-client.xml -o ClientName.docx
 |------|-------------|
 | `-o / --output` | Output path (default: `Therefore_Documentation.docx`) |
 | `--render-dir` | Cache rendered PNGs here instead of a temp dir |
+| `--data-dir` | Directory of REST-pulled JSON files for additional enrichment |
 | `--no-images` | Skip category / eForm / workflow image renders |
 | `--skip-eforms` | Exclude the eForms section |
 | `--body-only` | Omit title page — output is content only, for inserting into a wrapper document |
 | `--start-section N` | Start section numbering from N (0 = no numbers; default 1) |
+| `--theme` | Path to a YAML theme file (see `themes/` for examples) |
+| `--format` | Image format for renders: `png` (default) or `svg` |
+| `--sections` | Comma-separated list of section keys to include (default: all — see section keys below) |
 
 ## What's in the generated document
 
-| Section | Content |
-|---------|---------|
-| Overview | Object counts summary |
-| Categories | Form render image, field table (No, Name, Type, Size, Details) |
-| Indexing Profiles | Target category, filter, init script, field assignment table |
-| Workflows | Mermaid flowchart, task table with transitions and resolved field conditions |
-| eForms | Form render image, field table with validation, calculated values, logic |
-| Category Relationships | Cross-reference diagram (cat→cat), keyword dictionary usage, eForm submissions |
-| Folder Structure | Recursive folder / object hierarchy |
-| Keyword Dictionaries | Values table + cross-reference of every category that uses it |
-| Queries | Name and ID listing |
-| Report Definitions | Name, type (Category / Workflow / System / Custom), path |
-| Stamps | Name and ID listing |
+| Section | Key | Content |
+|---------|-----|---------|
+| AI Summary | `ai_summary` | AI-generated executive summary (requires AI API — see below) |
+| Server Configuration | `server_info` | API URL, tenant, region, service version, retention policies |
+| Categories | `categories` | Form render image, field table (No, Name, Type, Size, Details) |
+| Indexing Profiles | `indexing_profiles` | Target category, filter, init script, field assignment table |
+| Workflow Processes | `workflows` | Mermaid flowchart, task table with transitions and resolved field conditions |
+| eForms | `eforms` | Form render image, field table with validation, calculated values, logic |
+| Users & Groups | `security` | All users, groups, and group membership (requires API credentials) |
+| Category Relationships | `relationships` | Cross-reference diagram (cat→cat), keyword dictionary usage, eForm submissions |
+| Folder Structure | `folder_structure` | Recursive folder / object hierarchy |
+| Keyword Dictionaries | `keyword_dicts` | Values table + cross-reference of every category that uses it |
+| Queries | `queries` | Name and ID listing |
+| Report Definitions | `reports` | Name, type (Category / Workflow / System / Custom), path |
+| Stamps | `stamps` | Name and ID listing |
+| Script Inventory | `script_inventory` | All custom scripts from profiles, eForms, and workflows |
+
+The **Key** column is the value to pass to `--sections`. Example: `--sections categories,workflows,eforms`.
 
 All field number references (e.g. `[-370]`) in workflow conditions and eForm scripts are resolved to their field names. Category, eForm, and workflow renders are indicative and may not exactly match the Therefore UI.
+
+## AI summary
+
+The `ai_summary` section calls a local or remote OpenAI-compatible API to generate a concise executive summary of the implementation. Configure via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AI_API_URL` | `http://localhost:1234/v1` | Base URL of the OpenAI-compatible endpoint |
+| `AI_API_KEY` | `lm-studio` | API key (use any string for LM Studio) |
+| `AI_MODEL` | _(first available model)_ | Model name to request |
+
+If `AI_API_URL` is not reachable or the section is not in `--sections`, the summary is skipped silently.
 
 ## Inserting into a wrapper document
 
@@ -107,10 +128,14 @@ uvicorn web.app:app --reload --port 8000
 
 ```
 build_doc.py              Main document builder
+fetch_server_info.py      Therefore API client — server info, users, groups
+ai_summary.py             AI summary generation (OpenAI-compatible)
 render_categories.py      PIL-based category form renderer
 render_eform.py           PIL-based eForm renderer (Formio JSON → image)
 render_workflow.py        Mermaid-based workflow renderer
 merge_docs.py             Inserts body.docx into a wrapper at a placeholder
+themes.py                 Theme loader
+themes/                   Built-in YAML theme files (default, dark, minimal, …)
 web/
   app.py                  FastAPI web application
   static/index.html       Single-page frontend
