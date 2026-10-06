@@ -1278,7 +1278,7 @@ def build_ix_profiles(doc, profiles, section_no, maps=None):
 TASK_TYPE_LABELS = {"1": "Start", "2": "End", "3": "Manual", "4": "Automatic"}
 
 try:
-    from render_workflow import render_workflow as _render_workflow
+    from render_workflow import render_workflows as _render_workflows
     _WORKFLOW_RENDER_AVAILABLE = True
 except ImportError:
     _WORKFLOW_RENDER_AVAILABLE = False
@@ -1298,16 +1298,27 @@ def build_workflows(doc, root, section_no, maps, render_dir=None, font=None):
     _manual_heading(doc, sec_heading(section_no, "Workflow Processes"), 15, 16, 5, bottom_border=True)
     doc.add_paragraph(f"Total workflow processes: {len(workflows)}")
 
+    def _img_path(wf):
+        wf_no = get_text(wf, "ProcessNo") or get_text(wf, "WFNo")
+        name = get_name(wf) or f"Workflow_{wf_no}"
+        return os.path.join(render_dir, f"{safe_fn(name)}_{wf_no}.png")
+
+    # Render every diagram up front in one Chromium session.
+    rendered = set()
+    if _WORKFLOW_RENDER_AVAILABLE and render_dir and font:
+        print(f"Rendering {len(workflows)} workflow diagram(s) ...")
+        rendered = _render_workflows([(wf, _img_path(wf)) for wf in workflows],
+                                     field_no_map=maps.get("field_no_map", {}))
+
     for wf in workflows:
         wf_no = get_text(wf, "ProcessNo") or get_text(wf, "WFNo")
         name  = get_name(wf) or f"Workflow_{wf_no}"
         blue_heading(doc, name, level=2, meta=f"(Process No: {show_id(wf_no)})")
 
-        # Embed workflow diagram if renderer is available
-        if _WORKFLOW_RENDER_AVAILABLE and render_dir and font:
-            img_path = os.path.join(render_dir, f"{safe_fn(name)}_{wf_no}.png")
-            result = _render_workflow(wf, img_path, font, field_no_map=maps.get("field_no_map", {}))
-            if result and os.path.exists(result):
+        # Embed workflow diagram if it rendered
+        result = _img_path(wf) if render_dir else None
+        if result in rendered:
+            if os.path.exists(result):
                 from PIL import Image as _PilImg
                 _iw, _ih = _PilImg.open(result).size
                 max_w = Cm(16.5)
@@ -2588,6 +2599,10 @@ def build_script_inventory(doc, profiles, root, section_no, maps=None,
                 rows.append(("Summary", summary))
             except Exception as exc:
                 print(f"  Script summary failed: {exc}")
+                from ai_summary import is_unreachable
+                if is_unreachable(exc):
+                    print("  AI endpoint unreachable — skipping remaining script summaries.")
+                    ai_url = None
 
         kv_table(doc, rows, lw=3.5, vw=13.0)
         add_code_block(doc, resolved_code)
@@ -3048,6 +3063,7 @@ def _main_impl(args, warnings=None):
 
     # AI Summary (generated before overview so section number comes first)
     _ai_summary_text = None
+    _ai_unreachable = False
     if "ai_summary" in sec and getattr(args, "ai_url", None):
         try:
             from ai_summary import generate_ai_summary
@@ -3066,6 +3082,9 @@ def _main_impl(args, warnings=None):
         except Exception as exc:
             warnings.append(f"AI summary failed: {exc}")
             print(f"AI summary failed: {exc}")
+            from ai_summary import is_unreachable
+            if is_unreachable(exc):
+                _ai_unreachable = True
 
     # Overview
     overview_counts = [
@@ -3153,7 +3172,8 @@ def _main_impl(args, warnings=None):
     # Script Inventory
     if "script_inventory" in sec:
         build_script_inventory(doc, profiles, root, _next_sn(), maps=maps,
-                               ai_url=getattr(args, "ai_url", None) if "ai_summary" in sec else None,
+                               ai_url=getattr(args, "ai_url", None)
+                               if "ai_summary" in sec and not _ai_unreachable else None,
                                ai_model=getattr(args, "ai_model", None),
                                ai_key=getattr(args, "ai_key", "lm-studio"))
 

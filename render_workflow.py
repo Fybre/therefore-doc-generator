@@ -219,6 +219,21 @@ def _autocrop(path: str, padding: int = 24) -> None:
         pass  # non-fatal — leave original
 
 
+def _mmdc_cmd(mmdc: str, input_path: str, output_path: str) -> list:
+    cmd = mmdc.split() + [
+        "-i", input_path,
+        "-o", output_path,
+        "--width",           "900",
+        "--height",          "6000",
+        "--scale",           "2",
+        "--backgroundColor", "white",
+    ]
+    _puppeteer_cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "puppeteer.json")
+    if os.path.exists(_puppeteer_cfg):
+        cmd += ["--puppeteerConfigFile", _puppeteer_cfg]
+    return cmd
+
+
 def render_workflow(wf_elem, output_path: str, font=None, field_no_map=None) -> str | None:
     """
     Render a workflow element to a PNG via mmdc.
@@ -240,17 +255,7 @@ def render_workflow(wf_elem, output_path: str, font=None, field_no_map=None) -> 
         tmp_mmd = f.name
 
     try:
-        cmd = mmdc.split() + [
-            "-i", tmp_mmd,
-            "-o", output_path,
-            "--width",           "900",
-            "--height",          "6000",
-            "--scale",           "2",
-            "--backgroundColor", "white",
-        ]
-        _puppeteer_cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "puppeteer.json")
-        if os.path.exists(_puppeteer_cfg):
-            cmd += ["--puppeteerConfigFile", _puppeteer_cfg]
+        cmd = _mmdc_cmd(mmdc, tmp_mmd, output_path)
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if result.returncode != 0:
             print(f"  mmdc error: {result.stderr.strip()[:200]}", file=sys.stderr)
@@ -267,6 +272,52 @@ def render_workflow(wf_elem, output_path: str, font=None, field_no_map=None) -> 
             os.unlink(tmp_mmd)
         except OSError:
             pass
+
+
+def render_workflows(items, field_no_map=None) -> set:
+    """
+    Render many workflows in one mmdc run (one Chromium session) instead of one per diagram.
+    `items` is a list of (wf_elem, output_path). Returns the set of output paths produced.
+    Diagrams missing after the batch (or all of them, if the batch fails) are retried singly.
+    """
+    mmdc = _find_mmdc()
+    if not mmdc:
+        return set()
+
+    jobs = []
+    for wf_elem, output_path in items:
+        src = build_mermaid(wf_elem, field_no_map=field_no_map)
+        if src:
+            jobs.append((wf_elem, output_path, src))
+    if not jobs:
+        return set()
+
+    done = set()
+    with tempfile.TemporaryDirectory() as tmp:
+        md_path = os.path.join(tmp, "workflows.md")
+        with open(md_path, "w", encoding="utf-8") as f:
+            for _, _, src in jobs:
+                f.write(f"```mermaid\n{src}\n```\n\n")
+        # -j 1: parallel jobs were slower and sometimes stalled on the last diagrams.
+        cmd = _mmdc_cmd(mmdc, md_path, os.path.join(tmp, "out.md")) + ["-e", "png", "-j", "1"]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60 + 10 * len(jobs))
+            if result.returncode != 0:
+                print(f"  mmdc batch error: {result.stderr.strip()[:200]}", file=sys.stderr)
+        except subprocess.TimeoutExpired:
+            print("  mmdc batch timeout", file=sys.stderr)
+        # Markdown mode names the images out-1.png, out-2.png ... in chart order.
+        for i, (_, output_path, _) in enumerate(jobs, 1):
+            rendered = os.path.join(tmp, f"out-{i}.png")
+            if os.path.exists(rendered):
+                os.replace(rendered, output_path)
+                _autocrop(output_path)
+                done.add(output_path)
+
+    for wf_elem, output_path, _ in jobs:
+        if output_path not in done and render_workflow(wf_elem, output_path, field_no_map=field_no_map):
+            done.add(output_path)
+    return done
 
 
 # ---------------------------------------------------------------------------
@@ -289,14 +340,16 @@ def render_all_workflows(input_xml: str, output_dir: str) -> list:
         return []
 
     wfs = wfp.findall("WFProcess") or wfp.findall("Workflow")
-    generated = []
+    items = []
     for wf in wfs:
         pno  = _get(wf, "ProcessNo") or _get(wf, "WFNo") or "x"
         name = _name(wf) or f"Workflow_{pno}"
-        path = os.path.join(output_dir, f"{safe_fn(name)}_{pno}.png")
-        result = render_workflow(wf, path)
-        if result:
-            generated.append(result)
+        items.append((name, wf, os.path.join(output_dir, f"{safe_fn(name)}_{pno}.png")))
+    done = render_workflows([(wf, path) for _, wf, path in items])
+    generated = []
+    for name, _, path in items:
+        if path in done:
+            generated.append(path)
             print(f"{name}: {path}")
         else:
             print(f"{name}: skipped")

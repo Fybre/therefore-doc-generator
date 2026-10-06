@@ -13,6 +13,15 @@ _REASONING_HEADROOM = 4000
 _STYLE_CACHE: dict[tuple, str] = {}
 
 
+def is_unreachable(exc: Exception) -> bool:
+    """True if the AI endpoint could not be reached or timed out (not a model/request error)."""
+    try:
+        from openai import APIConnectionError  # APITimeoutError is a subclass
+    except ImportError:
+        return False
+    return isinstance(exc, APIConnectionError)
+
+
 def _chat(client, model: str, prompt: str, temperature: float, max_tokens: int) -> str:
     """
     Run one chat completion, adapting to what the endpoint accepts.
