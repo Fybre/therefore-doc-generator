@@ -285,6 +285,28 @@
     cursor: pointer;
     flex-shrink: 0;
   }
+  .source-toggle {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 12px;
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .source-toggle button {
+    flex: 1;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.88rem;
+    cursor: pointer;
+  }
+  .source-toggle button.active { background: var(--blue-light); color: var(--text); }
+  .source-note { font-size: 0.82rem; color: var(--muted); line-height: 1.5; }
+
   .link-btn {
     background: none;
     border: none;
@@ -323,7 +345,17 @@
   <div class="card">
 
     <!-- XML Upload -->
-    <div class="section-label">Configuration File <span style="color:#E53E3E">*</span></div>
+    <div class="section-label">Configuration Source <span style="color:#E53E3E">*</span></div>
+    <div class="source-toggle" role="tablist">
+      <button type="button" class="active" id="srcServerBtn" data-source="server">Export from server</button>
+      <button type="button" id="srcUploadBtn" data-source="upload">Upload XML export</button>
+    </div>
+    <div id="serverSourceNote" class="source-note" style="display:none">
+      The configuration is exported directly from the server, as Solution Designer does — enter the
+      connection details under <strong>Server Connection</strong> below. This usually takes a couple of
+      minutes. Very large tenants can exceed Therefore Online's five-minute request limit; if that
+      happens, you will be told and can upload an XML export instead. Password login only (no SSO/MFA).
+    </div>
     <div class="drop-zone" id="xmlZone">
       <input type="file" id="xmlInput" accept=".xml">
       <span class="drop-icon">📋</span>
@@ -414,12 +446,12 @@
     <!-- Server Connection -->
     <div class="wrapper-instructions">
       <button class="instr-toggle" id="serverToggle">
-        <i class="chevron">›</i> Server Connection <span style="color:var(--muted);font-weight:400;font-size:0.82rem">(optional — enriches Server Configuration section)</span>
+        <i class="chevron">›</i> Server Connection <span id="serverHint" style="color:var(--muted);font-weight:400;font-size:0.82rem">(optional — enriches Server Configuration section)</span>
       </button>
       <div class="instr-body" id="serverBody" style="display:none">
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
           <div>
-            <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">API URL</label>
+            <label style="font-size:0.82rem;color:var(--muted);display:block;margin-bottom:4px">Server URL</label>
             <input type="text" id="apiUrl" placeholder="https://tenant.thereforeonline.com  or  https://server/theservice"
               style="width:100%;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:0.88rem;box-sizing:border-box">
           </div>
@@ -523,6 +555,26 @@
 // File state
 let xmlFile  = null;
 let docxFile = null;
+let configSource = 'server';   // 'server' | 'upload'
+
+function setSource(src) {
+  configSource = src;
+  const server = src === 'server';
+  document.getElementById('srcUploadBtn').classList.toggle('active', !server);
+  document.getElementById('srcServerBtn').classList.toggle('active', server);
+  document.getElementById('xmlZone').style.display = server ? 'none' : '';
+  document.getElementById('serverSourceNote').style.display = server ? 'block' : 'none';
+  document.getElementById('serverHint').textContent = server
+    ? '(required — configuration is exported from this server)'
+    : '(optional — enriches Server Configuration section)';
+  if (server) {
+    document.getElementById('serverBody').style.display = 'block';
+    document.getElementById('serverToggle').classList.add('open');
+  }
+  updateBtn();
+}
+document.getElementById('srcUploadBtn').addEventListener('click', () => setSource('upload'));
+document.getElementById('srcServerBtn').addEventListener('click', () => setSource('server'));
 
 // ── Drop zone wiring ────────────────────────────────────────────────────────
 function wireZone(zoneId, inputId, fileNameId, fileNameTextId, removeId, onSet, onClear) {
@@ -674,6 +726,7 @@ document.getElementById('testConnBtn').addEventListener('click', async () => {
   form.append('api_tenant',   document.getElementById('apiTenant').value.trim());
   form.append('api_username', document.getElementById('apiUsername').value.trim());
   form.append('api_password', document.getElementById('apiPassword').value);
+  form.append('source',       configSource);
 
   try {
     const resp = await fetch('/test-connection', { method: 'POST', body: form });
@@ -699,9 +752,20 @@ document.getElementById('testConnBtn').addEventListener('click', async () => {
   }
 });
 
-function updateBtn() {
-  document.getElementById('generateBtn').disabled = !xmlFile;
+function serverReady() {
+  return ['apiUrl', 'apiUsername', 'apiPassword'].every(id => document.getElementById(id).value.trim());
 }
+function canGenerate() {
+  return configSource === 'server' ? serverReady() : !!xmlFile;
+}
+function updateBtn() {
+  document.getElementById('generateBtn').disabled = !canGenerate();
+}
+['apiUrl', 'apiUsername', 'apiPassword'].forEach(id =>
+  document.getElementById(id).addEventListener('input', updateBtn));
+
+// Default mode: export directly from the server.
+setSource('server');
 
 // ── Wrapper placeholder validation ──────────────────────────────────────────
 async function validateWrapper(file) {
@@ -833,7 +897,8 @@ wireZone('themeZone', 'themeInput', 'themeFileName', 'themeFileNameText', 'theme
 
 // ── Generate ────────────────────────────────────────────────────────────────
 document.getElementById('generateBtn').addEventListener('click', async () => {
-  if (!xmlFile) return;
+  if (!canGenerate()) return;
+  const fromServer = configSource === 'server';
 
   const btn    = document.getElementById('generateBtn');
   const status = document.getElementById('status');
@@ -850,7 +915,8 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
   log.textContent   = '';
 
   const form = new FormData();
-  form.append('xml_file', xmlFile);
+  form.append('source', configSource);
+  if (!fromServer) form.append('xml_file', xmlFile);
   form.append('sections', getSelectedSections());
 
   // Template / wrapper
@@ -895,8 +961,10 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
     }
     const { job_id } = await startResp.json();
 
-    title.textContent = 'Generating documentation…';
-    sub.textContent   = 'This may take a minute for large configurations.';
+    title.textContent = fromServer ? 'Exporting from server…' : 'Generating documentation…';
+    sub.textContent   = fromServer
+      ? 'The server export usually takes a couple of minutes.'
+      : 'This may take a minute for large configurations.';
 
     // Step 2 — stream progress via SSE
     await new Promise((resolve, reject) => {
@@ -925,6 +993,14 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
           spinner.style.display = 'none';
           title.textContent = 'Done! Your document is downloading.';
           sub.textContent   = msg.filename;
+          if (msg.has_xml) {
+            const link = Object.assign(document.createElement('a'), {
+              href: `/download-xml/${job_id}`,
+              textContent: 'Download exported configuration XML',
+              className: 'link-btn',
+            });
+            sub.append(document.createElement('br'), link);
+          }
 
           if (msg.warnings && msg.warnings.length > 0) {
             log.textContent += '\n⚠ Warnings:\n' + msg.warnings.map(w => '  • ' + w).join('\n');
@@ -951,7 +1027,7 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
     title.textContent = 'Generation failed';
     sub.textContent   = err.message;
   } finally {
-    btn.disabled = !xmlFile;
+    btn.disabled = !canGenerate();
   }
 });
 </script>

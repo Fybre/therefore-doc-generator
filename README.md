@@ -1,6 +1,6 @@
 # Therefore Documentation Generator
 
-Generates a Word document describing a Therefore implementation from its XML configuration export. Covers categories (with form renders), workflows (with flowchart diagrams), eForms, indexing profiles, keyword dictionaries, category relationships, queries, reports, and stamps.
+Generates a Word document describing a Therefore implementation from its XML configuration export — either an uploaded `TheConfiguration-*.xml` or one exported directly from the server. Covers categories (with form renders), workflows (with flowchart diagrams), eForms, indexing profiles, keyword dictionaries, category relationships, queries, reports, and stamps.
 
 ## Quick start — Docker (recommended)
 
@@ -8,7 +8,7 @@ Generates a Word document describing a Therefore implementation from its XML con
 docker compose up --build
 ```
 
-Open **http://localhost:8000**, drop in your `TheConfiguration-*.xml`, and download the result.
+Open **http://localhost:8000**, enter your server connection details (the default **Export from server** mode) — or switch to **Upload XML export** and drop in a `TheConfiguration-*.xml` — and download the result.
 
 ## Quick start — CLI
 
@@ -20,6 +20,13 @@ python build_doc.py TheConfiguration-client.xml
 # → Therefore_Documentation.docx
 
 python build_doc.py TheConfiguration-client.xml -o ClientName.docx
+```
+
+Or export the configuration directly from the server instead of supplying an XML file:
+
+```bash
+python build_doc.py --server https://tenant.thereforeonline.com --username jane.smith -o Tenant.docx
+# password from $THEREFORE_PASSWORD, otherwise prompted; the exported XML is kept as TheConfiguration-<tenant>.xml
 ```
 
 ### CLI options
@@ -36,6 +43,23 @@ python build_doc.py TheConfiguration-client.xml -o ClientName.docx
 | `--theme` | Path to a YAML theme file (see `themes/` for examples) |
 | `--format` | Image format for renders: `png` (default) or `svg` |
 | `--sections` | Comma-separated list of section keys to include (default: all — see section keys below) |
+| `--server` | Export directly from this server instead of reading an XML file |
+| `--tenant` | Tenant name (auto-detected for `*.thereforeonline.com`) |
+| `--username` / `--password` | Login for `--server` (password defaults to `$THEREFORE_PASSWORD`, else prompts) |
+| `--save-xml` | Where to save the exported XML (default: `TheConfiguration-<tenant>.xml`) |
+
+## Exporting directly from the server
+
+With **Export from server** (web) or `--server` (CLI), the generator logs in to the server's `/TheXMLServer` endpoint — the interface Solution Designer uses — and runs the same export as Solution Designer's *Export configuration* with every object selected and role assignments included. Users, groups and memberships come from the export; the Server Configuration section (settings, version, licence, domains) is read over the same connection, so the REST API is not used in this mode. The exported XML can be downloaded from the web UI afterwards.
+
+Limitations:
+
+- This is Therefore's internal Solution Designer protocol, not a published API; verified on build 35.0.3.
+- Password login only (ASCII passwords). SSO and MFA accounts are not supported.
+- Therefore Online closes any request that runs longer than about five minutes. Very large tenants can exceed this while the server builds the export (Solution Designer hits the same limit). When this happens the generator reports it and stops — upload an XML export instead.
+- The login uses a Solution Designer session, so the account needs Solution Designer access.
+
+In upload mode, the optional Server Connection still uses the REST API to enrich the Server Configuration section, as before.
 
 ## What's in the generated document
 
@@ -128,7 +152,8 @@ uvicorn web.app:app --reload --port 8000
 
 ```
 build_doc.py              Main document builder
-fetch_server_info.py      Therefore API client — server info, users, groups
+fetch_server_info.py      Therefore REST API client — server info, users, groups
+therefore_xmlserver.py    TheXMLServer client — direct configuration export and server info
 ai_summary.py             AI summary generation (OpenAI-compatible)
 render_categories.py      PIL-based category form renderer
 render_eform.py           PIL-based eForm renderer (Formio JSON → image)

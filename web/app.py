@@ -6,6 +6,7 @@ Endpoints:
   POST /generate               — start a generation job, returns {job_id}
   GET  /progress/{job_id}      — SSE stream of log lines + completion/error event
   GET  /download/{job_id}      — download the generated .docx
+  GET  /download-xml/{job_id}  — download the configuration XML exported from the server
   POST /validate-wrapper       — check a .docx contains the placeholder
 """
 
@@ -73,6 +74,7 @@ class Job:
     status:      str = "running"   # running | done | error
     output_path: Optional[str] = None
     output_name: Optional[str] = None
+    xml_path:    Optional[str] = None
     error:       Optional[str] = None
     warnings:    list = field(default_factory=list)
     log_queue:   queue.Queue = field(default_factory=queue.Queue)
@@ -91,6 +93,8 @@ def _cleanup_old_jobs():
     for j in stale.values():
         if j.output_path:
             shutil.rmtree(os.path.dirname(j.output_path), ignore_errors=True)
+        if j.xml_path:
+            shutil.rmtree(os.path.dirname(j.xml_path), ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +132,8 @@ async def get_templates():
 
 @app.post("/generate")
 async def start_generate(
-    xml_file:      UploadFile = File(...),
+    xml_file:      UploadFile = File(None),
+    source:        str        = Form("upload"),
     wrapper_file:  UploadFile = File(None),
     template_id:   str        = Form(""),
     theme_file:    UploadFile = File(None),
@@ -141,11 +146,19 @@ async def start_generate(
     api_username:  str        = Form(""),
     api_password:  str        = Form(""),
 ):
-    xml_bytes     = await xml_file.read()
+    from_server = source == "server"
+    if from_server:
+        if not api_url.strip() or not api_username.strip():
+            raise HTTPException(status_code=400, detail="Server URL and username are required.")
+        xml_bytes = None
+    else:
+        if not xml_file or not xml_file.filename:
+            raise HTTPException(status_code=400, detail="Upload a configuration XML file.")
+        xml_bytes = await xml_file.read()
     wrapper_bytes = await wrapper_file.read() if wrapper_file and wrapper_file.filename else None
     theme_bytes   = await theme_file.read() if theme_file and theme_file.filename else None
 
-    xml_name     = xml_file.filename or "config.xml"
+    xml_name     = (xml_file.filename or "config.xml") if xml_bytes is not None else None
     wrapper_name = (wrapper_file.filename or "wrapper.docx") if wrapper_bytes else None
     theme_name   = theme_file.filename or "theme.yaml" if theme_bytes else None
 
@@ -161,7 +174,7 @@ async def start_generate(
         target=_run_job,
         args=(job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
               sections_list, start_section, theme_bytes, theme_name, img_format, theme_id, template_id,
-              api_url.strip(), api_tenant.strip(), api_username.strip(), api_password),
+              api_url.strip(), api_tenant.strip(), api_username.strip(), api_password, from_server),
         daemon=True,
     )
     thread.start()
@@ -190,6 +203,7 @@ async def progress(job_id: str):
                     "type":     "done",
                     "filename": job.output_name,
                     "warnings": job.warnings,
+                    "has_xml":  bool(job.xml_path),
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
                 break
@@ -223,15 +237,28 @@ async def download(job_id: str):
     )
 
 
+@app.get("/download-xml/{job_id}")
+async def download_xml(job_id: str):
+    job = _jobs.get(job_id)
+    if not job or not job.xml_path or not os.path.exists(job.xml_path):
+        raise HTTPException(status_code=404, detail="Exported XML not available")
+    return FileResponse(path=job.xml_path, media_type="application/xml",
+                        filename=os.path.basename(job.xml_path))
+
+
 @app.post("/test-connection")
 async def test_connection(
     api_url:      str = Form(""),
     api_tenant:   str = Form(""),
     api_username: str = Form(""),
     api_password: str = Form(""),
+    source:       str = Form("upload"),
 ):
     if not api_url.strip() or not api_username.strip():
-        return JSONResponse({"ok": False, "error": "API URL and username are required."})
+        return JSONResponse({"ok": False, "error": "Server URL and username are required."})
+    if source == "server":
+        return await asyncio.to_thread(_test_xmlserver, api_url.strip(), api_tenant.strip(),
+                                       api_username.strip(), api_password)
     try:
         from fetch_server_info import fetch_server_info, derive_tenant
         info = fetch_server_info(api_url.strip(), api_tenant.strip(), api_username.strip(), api_password)
@@ -246,6 +273,23 @@ async def test_connection(
         }
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)})
+
+
+def _test_xmlserver(api_url, api_tenant, api_username, api_password):
+    try:
+        from therefore_xmlserver import XMLServerClient, fetch_server_info
+        with XMLServerClient(api_url, api_username, api_password, tenant=api_tenant, timeout=60) as client:
+            info = fetch_server_info(client, api_url)
+        return {
+            "ok":              True,
+            "service_version": info.get("server_version", ""),
+            "server_name":     info.get("server_name", ""),
+            "customer_id":     info.get("customer_id", ""),
+            "tenant":          info.get("tenant_name", "") or client.tenant,
+            "region":          info.get("region", ""),
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 @app.post("/validate-wrapper")
@@ -268,16 +312,37 @@ async def validate_wrapper(wrapper_file: UploadFile = File(...)):
 def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
              sections_list, start_section=1, theme_bytes=None, theme_name=None,
              img_format="png", theme_id="", template_id="",
-             api_url="", api_tenant="", api_username="", api_password=""):
+             api_url="", api_tenant="", api_username="", api_password="", from_server=False):
     tmpdir = tempfile.mkdtemp(prefix="therefore_web_")
     try:
         from build_doc import generate
         from merge_docs import merge as merge_docs
         from themes import load_theme, list_themes
 
-        xml_path = os.path.join(tmpdir, xml_name)
-        with open(xml_path, "wb") as f:
-            f.write(xml_bytes)
+        server_info  = None
+        api_security = None
+        if from_server:
+            from therefore_xmlserver import (XMLServerClient, ExportTimeoutError, export_configuration,
+                                             fetch_server_info as fetch_xml_server_info)
+            with XMLServerClient(api_url, api_username, api_password, tenant=api_tenant,
+                                 log_fn=job.log_queue.put) as client:
+                try:
+                    xml_text = export_configuration(client, log_fn=job.log_queue.put)
+                except ExportTimeoutError as exc:
+                    raise RuntimeError(str(exc)) from None
+                xml_name = f"TheConfiguration-{client.tenant or 'server'}.xml"
+                # Keep the exported XML downloadable alongside the document.
+                xml_dir = tempfile.mkdtemp(prefix="therefore_xml_")
+                job.xml_path = os.path.join(xml_dir, xml_name)
+                with open(job.xml_path, "w", encoding="utf-8") as f:
+                    f.write(xml_text)
+                job.log_queue.put("Reading server configuration ...")
+                server_info = fetch_xml_server_info(client, api_url)
+            xml_path = job.xml_path
+        else:
+            xml_path = os.path.join(tmpdir, xml_name)
+            with open(xml_path, "wb") as f:
+                f.write(xml_bytes)
 
         theme = None
         if theme_bytes:
@@ -308,9 +373,7 @@ def _run_job(job: Job, xml_bytes, xml_name, wrapper_bytes, wrapper_name,
         output_name = f"{doc_title}_Documentation.docx"
         output_path = os.path.join(tmpdir, output_name)
 
-        server_info  = None
-        api_security = None
-        if api_url and api_username:
+        if api_url and api_username and not from_server:
             try:
                 import sys as _sys
                 _sys.path.insert(0, str(ROOT))

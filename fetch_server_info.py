@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 # GetGlobalSettings numeric keys → (field_name, display_label)
 # Keys with label=None are parsed from XML rather than surfaced directly.
-_SETTINGS = {
+SETTINGS = {
     1:    ("db_connection",      "Server / Database"),
     3:    ("db_username",        "Username"),
     15:   ("db_options",         "Connection Options"),
@@ -33,6 +33,43 @@ _SETTINGS = {
     1301: ("storage_status_xml", None),
     1612: ("webviewer_blob",     "Web Viewer Storage"),
 }
+
+
+def parse_settings(raw: dict) -> dict:
+    """
+    Map raw setting values {key: str} to named fields, expanding the SMTP (604)
+    and storage status (1301) XML values. Shared by the REST and TheXMLServer paths.
+    """
+    info: dict = {}
+    for key, val in raw.items():
+        if key in SETTINGS and val:
+            info[SETTINGS[key][0]] = val
+
+    # Parse SMTP config XML (key 604)
+    smtp_xml = info.pop("smtp_config_xml", None)
+    if smtp_xml:
+        try:
+            el = ET.fromstring(smtp_xml)
+            info["smtp_server"]    = el.findtext("Server")  or info.get("smtp_server", "")
+            info["smtp_sender"]    = el.findtext("Sender")  or info.get("smtp_sender", "")
+            info["smtp_ssl"]       = el.findtext("UseSsl") == "1"
+            auth_el = el.find("Auth")
+            if auth_el is not None:
+                info["smtp_auth_user"] = auth_el.findtext("User") or ""
+        except Exception:
+            pass
+
+    # Parse storage status XML (key 1301)
+    status_xml = info.pop("storage_status_xml", None)
+    if status_xml:
+        try:
+            el = ET.fromstring(status_xml)
+            info["storage_licensed_gb"] = el.findtext("LicensedStorage") or ""
+            info["storage_used_gb"]     = el.findtext("Exceeded") or ""
+        except Exception:
+            pass
+
+    return info
 
 
 def _restun_base(api_url: str) -> str:
@@ -224,33 +261,11 @@ def fetch_server_info(api_url: str, tenant: str, username: str, password: str) -
         pass
 
     # Global settings
-    for key, (field, _label) in _SETTINGS.items():
+    raw = {}
+    for key in SETTINGS:
         val = _global_setting(base, key, headers)
         if val is not None:
-            info[field] = val
-
-    # Parse SMTP config XML (key 604)
-    smtp_xml = info.pop("smtp_config_xml", None)
-    if smtp_xml:
-        try:
-            el = ET.fromstring(smtp_xml)
-            info["smtp_server"]    = el.findtext("Server")  or info.get("smtp_server", "")
-            info["smtp_sender"]    = el.findtext("Sender")  or info.get("smtp_sender", "")
-            info["smtp_ssl"]       = el.findtext("UseSsl") == "1"
-            auth_el = el.find("Auth")
-            if auth_el is not None:
-                info["smtp_auth_user"] = auth_el.findtext("User") or ""
-        except Exception:
-            pass
-
-    # Parse storage status XML (key 1301)
-    status_xml = info.pop("storage_status_xml", None)
-    if status_xml:
-        try:
-            el = ET.fromstring(status_xml)
-            info["storage_licensed_gb"] = el.findtext("LicensedStorage") or ""
-            info["storage_used_gb"]     = el.findtext("Exceeded") or ""
-        except Exception:
-            pass
+            raw[key] = val
+    info.update(parse_settings(raw))
 
     return info

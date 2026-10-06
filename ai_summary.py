@@ -5,6 +5,57 @@ Uses an OpenAI-compatible API (e.g. LM Studio running locally).
 """
 from __future__ import annotations
 
+# Reasoning models (OpenAI o-series, gpt-5 family) spend completion tokens on hidden
+# reasoning before writing any text, so they need far more room than the visible output.
+_REASONING_HEADROOM = 4000
+
+# Request style that worked per (base_url, model), so repeated calls skip failed attempts.
+_STYLE_CACHE: dict[tuple, str] = {}
+
+
+def _chat(client, model: str, prompt: str, temperature: float, max_tokens: int) -> str:
+    """
+    Run one chat completion, adapting to what the endpoint accepts.
+
+    Tries, in order:
+      "classic"   — temperature + max_tokens (LM Studio, gpt-4o / gpt-4.1, most compatible servers)
+      "reasoning" — max_completion_tokens with reasoning headroom, default temperature,
+                    reasoning_effort="low" (OpenAI o-series / gpt-5)
+      "plain"     — as "reasoning" but without reasoning_effort
+    A style is only abandoned on a 400 error that names one of its parameters.
+    """
+    from openai import BadRequestError
+
+    messages = [{"role": "user", "content": prompt}]
+    styles = {
+        "classic":   {"temperature": temperature, "max_tokens": max_tokens},
+        "reasoning": {"max_completion_tokens": max_tokens + _REASONING_HEADROOM, "reasoning_effort": "low"},
+        "plain":     {"max_completion_tokens": max_tokens + _REASONING_HEADROOM},
+    }
+    key = (str(client.base_url), model)
+    order = list(styles)
+    if key in _STYLE_CACHE:
+        order.remove(_STYLE_CACHE[key])
+        order.insert(0, _STYLE_CACHE[key])
+
+    last_exc = None
+    for style in order:
+        try:
+            response = client.chat.completions.create(model=model, messages=messages, **styles[style])
+        except BadRequestError as exc:
+            message = str(exc)
+            if not any(param in message for param in styles[style]):
+                raise
+            last_exc = exc
+            continue
+        _STYLE_CACHE[key] = style
+        text = (response.choices[0].message.content or "").strip()
+        if not text:
+            reason = response.choices[0].finish_reason
+            raise RuntimeError(f"model returned no text (finish_reason={reason})")
+        return text
+    raise last_exc
+
 
 def _build_prompt(categories, workflows, profiles, eforms, maps, server_info=None) -> str:
     from build_doc import get_name
@@ -86,13 +137,7 @@ def summarize_script(
         + (f"Context: {context}\n" if context else "")
         + f"\n{code}"
     )
-    response = client.chat.completions.create(
-        model=ai_model or "local-model",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=120,
-    )
-    return response.choices[0].message.content.strip()
+    return _chat(client, ai_model or "local-model", prompt, temperature=0.2, max_tokens=120)
 
 
 def generate_ai_summary(
@@ -122,11 +167,7 @@ def generate_ai_summary(
     if log_fn:
         log_fn(f"Requesting AI summary from {ai_url} ...")
 
-    kwargs = {"model": ai_model or "local-model", "messages": [{"role": "user", "content": prompt}],
-              "temperature": 0.3, "max_tokens": 512}
-
-    response = client.chat.completions.create(**kwargs)
-    text = response.choices[0].message.content.strip()
+    text = _chat(client, ai_model or "local-model", prompt, temperature=0.3, max_tokens=512)
 
     if log_fn:
         log_fn("AI summary received.")

@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from datetime import date
@@ -2642,7 +2643,11 @@ def build_server_info_section(doc, server_info, xml_root, categories, section_no
         if si.get("api_url"):            sys_rows.append(("API URL",           si["api_url"]))
         if si.get("api_tenant"):         sys_rows.append(("Tenant",            si["api_tenant"]))
         if si.get("server_name"):        sys_rows.append(("Server Name",       si["server_name"]))
+        if si.get("server_version"):     sys_rows.append(("Server Version",    si["server_version"]))
         if si.get("service_version"):    sys_rows.append(("Service Version",   si["service_version"]))
+        if si.get("product_name"):       sys_rows.append(("Product",           si["product_name"]))
+        if si.get("licensee"):           sys_rows.append(("Licensee",          si["licensee"]))
+        if si.get("maintenance_until"):  sys_rows.append(("Maintenance Until", si["maintenance_until"]))
         if si.get("customer_id"):        sys_rows.append(("Customer ID",       si["customer_id"]))
         if si.get("tenant_name") and si.get("tenant_name") != si.get("api_tenant"):
             sys_rows.append(("Tenant Name",       si["tenant_name"]))
@@ -3294,9 +3299,32 @@ def build_security_section(doc, security: dict, section_no):
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
+def _export_from_server(args) -> tuple[str, dict]:
+    """Export configuration and server details over TheXMLServer; return (xml_path, server_info)."""
+    import getpass
+    from therefore_xmlserver import (XMLServerClient, ExportTimeoutError, derive_tenant,
+                                     export_configuration, fetch_server_info as fetch_xml_server_info)
+
+    password = args.password or os.environ.get("THEREFORE_PASSWORD") or getpass.getpass(
+        f"Password for {args.username}: ")
+    tenant = derive_tenant(args.server, args.tenant or "")
+    xml_path = args.save_xml or f"TheConfiguration-{tenant or 'server'}.xml"
+    with XMLServerClient(args.server, args.username, password, tenant=tenant, log_fn=print) as client:
+        try:
+            xml_text = export_configuration(client, log_fn=print)
+        except ExportTimeoutError as exc:
+            sys.exit(f"Export failed: {exc}")
+        os.makedirs(os.path.dirname(os.path.abspath(xml_path)), exist_ok=True)
+        with open(xml_path, "w", encoding="utf-8") as f:
+            f.write(xml_text)
+        print(f"Configuration XML saved to {xml_path}")
+        server_info = fetch_xml_server_info(client, args.server)
+    return xml_path, server_info
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("xml",            help="Path to TheConfiguration-*.xml")
+    ap.add_argument("xml", nargs="?",  help="Path to TheConfiguration-*.xml (omit when using --server)")
     ap.add_argument("-o", "--output", default="Therefore_Documentation.docx")
     ap.add_argument("--render-dir",   help="Cache rendered PNGs here")
     ap.add_argument("--data-dir",     help="REST-pulled JSON dir")
@@ -3311,13 +3339,29 @@ def main():
                     help="Category image format (default: png)")
     ap.add_argument("--sections", default="",
                     help="Comma-separated section keys to include (default: all)")
+    srv = ap.add_argument_group("export directly from a server (instead of an XML file)")
+    srv.add_argument("--server",   metavar="URL", help="Server URL, e.g. https://tenant.thereforeonline.com")
+    srv.add_argument("--tenant",   help="Tenant name (auto-detected for thereforeonline.com)")
+    srv.add_argument("--username", help="Therefore username")
+    srv.add_argument("--password", help="Password (default: $THEREFORE_PASSWORD, else prompt)")
+    srv.add_argument("--save-xml", metavar="PATH",
+                     help="Where to save the exported XML (default: TheConfiguration-<tenant>.xml)")
     args = ap.parse_args()
+
+    if bool(args.xml) == bool(args.server):
+        ap.error("give either an XML file or --server")
+    if args.server and not args.username:
+        ap.error("--server requires --username")
 
     theme = load_theme(args.theme) if args.theme else None
     sections_list = [s.strip() for s in args.sections.split(",") if s.strip()] or None
 
+    xml_path, server_info = (args.xml, None)
+    if args.server:
+        xml_path, server_info = _export_from_server(args)
+
     warnings = generate(
-        args.xml, args.output,
+        xml_path, args.output,
         skip_eforms   = args.skip_eforms,
         no_images     = args.no_images,
         body_only     = args.body_only,
@@ -3327,10 +3371,10 @@ def main():
         theme         = theme,
         img_format    = args.format,
         sections      = sections_list,
+        server_info   = server_info,
     )
     for w in warnings:
         print(f"⚠  {w}")
-
 
 if __name__ == "__main__":
     main()
