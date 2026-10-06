@@ -969,8 +969,10 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
     // Step 2 — stream progress via SSE
     await new Promise((resolve, reject) => {
       const es = new EventSource(`/progress/${job_id}`);
+      let failures = 0;
 
       es.onmessage = (e) => {
+        failures = 0;
         const msg = JSON.parse(e.data);
 
         if (msg.type === 'log') {
@@ -1015,9 +1017,17 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
         }
       };
 
+      // EventSource reconnects by itself after a dropped connection (e.g. a proxy
+      // timeout); the job keeps running server-side. Give up only if it stays down.
       es.onerror = () => {
-        es.close();
-        reject(new Error('Connection lost'));
+        failures += 1;
+        if (es.readyState === EventSource.CLOSED || failures > 20) {
+          es.close();
+          reject(new Error('Lost connection to the server while generating. ' +
+                           'The job may still finish — try again in a few minutes.'));
+        } else {
+          log.textContent += '(connection interrupted — reconnecting…)\n';
+        }
       };
     });
 

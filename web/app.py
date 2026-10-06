@@ -189,14 +189,22 @@ async def progress(job_id: str):
         raise HTTPException(status_code=404, detail="Job not found")
 
     async def stream():
+        last_sent = time.time()
         while True:
             # Drain all queued log lines
             try:
                 while True:
                     line = job.log_queue.get_nowait()
                     yield f"data: {json.dumps({'type': 'log', 'text': line})}\n\n"
+                    last_sent = time.time()
             except queue.Empty:
                 pass
+
+            # Long silent steps (e.g. building the document) would otherwise let
+            # reverse proxies close the idle connection; SSE comments are ignored by browsers.
+            if time.time() - last_sent >= 15:
+                yield ": keep-alive\n\n"
+                last_sent = time.time()
 
             if job.status == "done":
                 payload = {
