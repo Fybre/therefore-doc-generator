@@ -20,6 +20,8 @@ import os
 import re
 import sys
 
+from image_utils import save_png
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -379,7 +381,7 @@ def safe_filename(name):
 def _save_downscaled(img, output_path):
     """Scale the supersampled image down to final size and save."""
     w, h = img.size
-    img.resize((w // SS, h // SS), Image.LANCZOS).save(output_path)
+    save_png(img.resize((w // SS, h // SS), Image.LANCZOS), output_path)
 
 
 def render_simple_category(name, cat, output_dir, font):

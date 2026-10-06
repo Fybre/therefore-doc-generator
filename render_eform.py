@@ -18,6 +18,8 @@ import xml.etree.ElementTree as ET
 
 from PIL import Image, ImageDraw, ImageFont
 
+from image_utils import save_png
+
 # ---------------------------------------------------------------------------
 # Colours
 # ---------------------------------------------------------------------------
@@ -531,7 +533,7 @@ def render_eform(ef_elem, output_path: str, font=None) -> str | None:
 
     # Crop to actual content
     img = img.crop((0, 0, CANVAS_W, y + PAD))
-    img.save(output_path)
+    save_png(img, output_path)
     return output_path
 
 

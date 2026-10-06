@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 
 try:
     from PIL import Image
+    from image_utils import save_png
     import numpy as np
     _PIL_AVAILABLE = True
 except ImportError:
@@ -197,7 +198,7 @@ def _find_mmdc() -> str | None:
 
 
 def _autocrop(path: str, padding: int = 24) -> None:
-    """Crop white margins from a rendered PNG in-place."""
+    """Crop white margins from a rendered PNG in-place and save it as a 64-colour palette PNG."""
     if not _PIL_AVAILABLE:
         return
     try:
@@ -214,7 +215,7 @@ def _autocrop(path: str, padding: int = 24) -> None:
         rmax = min(arr.shape[0], rmax + padding)
         cmin = max(0, cmin - padding)
         cmax = min(arr.shape[1], cmax + padding)
-        img.crop((cmin, rmin, cmax, rmax)).save(path)
+        save_png(img.crop((cmin, rmin, cmax, rmax)), path, colors=64)
     except Exception:
         pass  # non-fatal — leave original
 
